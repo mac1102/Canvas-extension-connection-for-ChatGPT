@@ -201,6 +201,7 @@ The router supports overlapping intents. A single prompt can request more than o
 | Intent | Example | Canvas data |
 | --- | --- | --- |
 | Dashboard | `@Canvas check Canvas` | courses + todo |
+| Assignments | `@Canvas CONNECTIONS có những assigment gì?` | fuzzy course match → full course assignment list |
 | Deadlines | `@Canvas deadline tuần này` | todo + targeted assignments |
 | Assignment details | `@Canvas hướng dẫn Gold Foraging` | assignment list → fuzzy match → full assignment |
 | Announcements | `@Canvas thông báo mới` | course announcements |
@@ -208,7 +209,7 @@ The router supports overlapping intents. A single prompt can request more than o
 | Files | `@Canvas lecture slides` | recently updated course files |
 | Modules | `@Canvas week 3 module` | modules + module items |
 
-The keyword router includes common English and Vietnamese forms. Course and assignment names are matched separately, so named entities such as `Robot Camp` or `Gold Foraging` do not need to be hard-coded.
+The keyword router includes common English and Vietnamese forms, plus limited typo tolerance for longer keywords (for example `assigment` → `assignment`). Course and assignment names are matched separately with light singular/plural tolerance, so `connection` can match a course prefix such as `CONNECTIONS` without hard-coding the course.
 
 ## Read-only Canvas endpoints
 
