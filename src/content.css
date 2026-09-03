@@ -1,0 +1,97 @@
+.canvas-live-hint {
+  position: fixed;
+  z-index: 2147483646;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #ffffff 96%, transparent);
+  color: #171717;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.14);
+  font: 12px/1.2 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: default;
+  user-select: none;
+  backdrop-filter: blur(10px);
+}
+
+@media (prefers-color-scheme: dark) {
+  .canvas-live-hint {
+    background: color-mix(in srgb, #202020 94%, transparent);
+    color: #f5f5f5;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.canvas-live-hint[data-mode="autocomplete"] { cursor: pointer; }
+.canvas-live-hint span:not(.canvas-live-dot) { opacity: 0.62; }
+.canvas-live-hint kbd {
+  padding: 2px 5px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  opacity: 0.45;
+  font: inherit;
+}
+.canvas-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+}
+.canvas-live-toast {
+  position: fixed;
+  z-index: 2147483647;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(430px, calc(100vw - 36px));
+  padding: 11px 12px;
+  border: 1px solid rgba(127, 127, 127, 0.22);
+  border-radius: 12px;
+  background: rgba(24, 24, 24, 0.94);
+  color: #fff;
+  box-shadow: 0 12px 42px rgba(0, 0, 0, 0.28);
+  opacity: 0;
+  transform: translateY(10px);
+  pointer-events: none;
+  transition: opacity 140ms ease, transform 140ms ease;
+  font: 13px/1.35 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  backdrop-filter: blur(12px);
+}
+.canvas-live-toast--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.canvas-live-toast__status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+.canvas-live-toast[data-kind="loading"] .canvas-live-toast__status {
+  background: #60a5fa;
+  animation: canvas-live-pulse 900ms ease-in-out infinite alternate;
+}
+.canvas-live-toast[data-kind="success"] .canvas-live-toast__status { background: #22c55e; }
+.canvas-live-toast[data-kind="error"] .canvas-live-toast__status { background: #ef4444; }
+.canvas-live-toast__message { flex: 1 1 auto; }
+.canvas-live-toast__settings {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+@keyframes canvas-live-pulse {
+  from { opacity: 0.45; transform: scale(0.88); }
+  to { opacity: 1; transform: scale(1.1); }
+}
