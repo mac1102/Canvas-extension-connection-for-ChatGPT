@@ -1,0 +1,62 @@
+:root {
+  color-scheme: light dark;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: color-mix(in srgb, Canvas 96%, #7c3aed 4%); }
+button, input, select { font: inherit; }
+code { font-family: "SFMono-Regular", Consolas, monospace; }
+
+.shell { width: min(920px, calc(100% - 32px)); margin: 0 auto; padding: 54px 0 80px; }
+.hero { display: flex; gap: 24px; align-items: flex-start; justify-content: space-between; margin-bottom: 28px; }
+.eyebrow { margin: 0 0 8px; font-size: 12px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; opacity: .55; }
+h1 { margin: 0; font-size: clamp(34px, 5vw, 50px); letter-spacing: -.045em; }
+.lede { max-width: 650px; margin: 14px 0 0; font-size: 17px; line-height: 1.55; opacity: .7; }
+
+.badge { flex: 0 0 auto; margin-top: 6px; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 999px; padding: 8px 11px; font-size: 12px; font-weight: 700; }
+.badge[data-kind="success"] { color: #15803d; background: color-mix(in srgb, #22c55e 12%, transparent); }
+.badge[data-kind="error"] { color: #dc2626; background: color-mix(in srgb, #ef4444 10%, transparent); }
+
+.card { margin-top: 18px; padding: 24px; border: 1px solid color-mix(in srgb, currentColor 12%, transparent); border-radius: 18px; background: color-mix(in srgb, Canvas 98%, transparent); box-shadow: 0 10px 35px color-mix(in srgb, #000 7%, transparent); }
+.card h2 { margin: 0 0 18px; font-size: 18px; letter-spacing: -.015em; }
+label:not(.check) { display: grid; gap: 7px; margin-top: 16px; }
+label > span { font-size: 13px; font-weight: 700; }
+small { display: block; font-size: 12px; line-height: 1.45; opacity: .58; }
+input, select { width: 100%; min-height: 42px; border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 10px; padding: 9px 11px; background: Canvas; color: CanvasText; outline: none; }
+input:focus, select:focus { border-color: #7c3aed; box-shadow: 0 0 0 3px color-mix(in srgb, #7c3aed 15%, transparent); }
+input[readonly] { opacity: .72; }
+.token-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.grid.two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+.actions { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 20px; }
+.button { min-height: 39px; border: 1px solid transparent; border-radius: 9px; padding: 8px 12px; cursor: pointer; font-weight: 700; }
+.button:disabled { opacity: .5; cursor: progress; }
+.button.primary { background: #7c3aed; color: white; }
+.button.secondary { border-color: color-mix(in srgb, currentColor 15%, transparent); background: color-mix(in srgb, Canvas 92%, currentColor 8%); color: CanvasText; }
+.button.danger { border-color: color-mix(in srgb, #ef4444 25%, transparent); background: color-mix(in srgb, #ef4444 8%, Canvas); color: #dc2626; }
+
+.check { display: grid; grid-template-columns: auto 1fr; gap: 11px; align-items: start; margin-top: 18px; }
+.check input { width: 17px; min-height: 17px; margin: 3px 0 0; accent-color: #7c3aed; }
+.check span { font-weight: 400; }
+.check strong { display: block; font-size: 13px; }
+.check small { margin-top: 3px; }
+.status { min-height: 20px; margin-top: 14px; font-size: 13px; }
+.status[data-kind="success"] { color: #15803d; }
+.status[data-kind="error"] { color: #dc2626; }
+.status[data-kind="info"] { opacity: .7; }
+
+.examples { display: grid; gap: 8px; }
+.examples code { display: block; padding: 10px 12px; border-radius: 9px; background: color-mix(in srgb, currentColor 5%, transparent); font-size: 12px; overflow-wrap: anywhere; }
+.usage p, .warning p { font-size: 13px; line-height: 1.6; opacity: .72; }
+.warning { border-color: color-mix(in srgb, #f59e0b 25%, transparent); }
+
+@media (max-width: 700px) {
+  .shell { width: min(100% - 20px, 920px); padding-top: 30px; }
+  .hero { display: block; }
+  .badge { display: inline-block; margin-top: 16px; }
+  .grid.two { grid-template-columns: 1fr; gap: 0; }
+  .card { padding: 19px; }
+}
