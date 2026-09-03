@@ -1,10 +1,14 @@
 const INTENT_KEYWORDS = {
   deadlines: [
     "deadline", "deadlines", "due", "due date", "overdue", "upcoming",
-    "today", "tomorrow", "this week", "next week", "assignment", "assignments",
-    "bai tap", "bài tập", "han", "hạn", "den han", "đến hạn", "qua han", "quá hạn",
+    "today", "tomorrow", "this week", "next week",
+    "han", "hạn", "den han", "đến hạn", "qua han", "quá hạn",
     "hom nay", "hôm nay", "ngay mai", "ngày mai", "tuan nay", "tuần này",
     "chua nop", "chưa nộp", "nop bai", "nộp bài"
+  ],
+  assignments: [
+    "assignment", "assignments", "assigment", "assigments",
+    "coursework", "tasks", "bai tap", "bài tập"
   ],
   assignmentDetail: [
     "instruction", "instructions", "requirement", "requirements", "rubric",
@@ -39,8 +43,62 @@ export function normalizeText(value = "") {
     .trim();
 }
 
+function canonicalToken(token) {
+  const value = normalizeText(token);
+  if (value.length > 5 && value.endsWith("ies")) return `${value.slice(0, -3)}y`;
+  if (value.length > 5 && value.endsWith("s") && !value.endsWith("ss")) return value.slice(0, -1);
+  return value;
+}
+
+function editDistanceAtMostOne(a, b) {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+
+  let i = 0;
+  let j = 0;
+  let edits = 0;
+
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+
+    edits += 1;
+    if (edits > 1) return false;
+
+    if (a.length > b.length) i += 1;
+    else if (b.length > a.length) j += 1;
+    else {
+      i += 1;
+      j += 1;
+    }
+  }
+
+  if (i < a.length || j < b.length) edits += 1;
+  return edits <= 1;
+}
+
+function tokenMatches(a, b) {
+  const left = canonicalToken(a);
+  const right = canonicalToken(b);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  return left.length >= 6 && right.length >= 6 && editDistanceAtMostOne(left, right);
+}
+
 function includesKeyword(normalized, keyword) {
-  return normalized.includes(normalizeText(keyword));
+  const normalizedKeyword = normalizeText(keyword);
+  if (normalized.includes(normalizedKeyword)) return true;
+
+  const keywordTokens = normalizedKeyword.split(" ").filter(Boolean);
+  if (keywordTokens.length !== 1) return false;
+
+  return normalized
+    .split(" ")
+    .filter(Boolean)
+    .some((token) => tokenMatches(token, keywordTokens[0]));
 }
 
 export function detectIntent(query) {
@@ -61,15 +119,20 @@ export function detectIntent(query) {
 
   if (!intents.length) return ["dashboard"];
 
-  if (intents.includes("assignmentDetail") && !intents.includes("deadlines")) {
-    intents.push("deadlines");
+  if (intents.includes("assignmentDetail") && !intents.includes("assignments")) {
+    intents.push("assignments");
   }
 
   return [...new Set(intents)];
 }
 
 function tokenSet(text) {
-  return new Set(normalizeText(text).split(" ").filter(Boolean));
+  return new Set(
+    normalizeText(text)
+      .split(" ")
+      .filter(Boolean)
+      .map(canonicalToken)
+  );
 }
 
 export function similarityScore(query, candidate) {
@@ -81,9 +144,17 @@ export function similarityScore(query, candidate) {
 
   const qTokens = tokenSet(q);
   const cTokens = tokenSet(c);
+
+  if (cTokens.size === 1) {
+    const [onlyCandidateToken] = cTokens;
+    if ([...qTokens].some((queryToken) => tokenMatches(queryToken, onlyCandidateToken))) {
+      return 0.9;
+    }
+  }
+
   let intersection = 0;
   for (const token of cTokens) {
-    if (qTokens.has(token)) intersection += 1;
+    if ([...qTokens].some((queryToken) => tokenMatches(queryToken, token))) intersection += 1;
   }
   const union = new Set([...qTokens, ...cTokens]).size || 1;
   const jaccard = intersection / union;
@@ -99,10 +170,16 @@ export function similarityScore(query, candidate) {
 export function rankCourses(query, courses, limit = 3) {
   return (courses || [])
     .map((course) => {
-      const labels = [course?.name, course?.course_code, course?.original_name]
-        .filter(Boolean)
-        .join(" ");
-      return { course, score: similarityScore(query, labels) };
+      const name = course?.name || "";
+      const prefix = name.includes(":") ? name.split(":", 1)[0] : name.split(/\s+-\s+/, 1)[0];
+      const candidates = [
+        name,
+        prefix,
+        course?.course_code,
+        course?.original_name
+      ].filter(Boolean);
+      const score = Math.max(...candidates.map((candidate) => similarityScore(query, candidate)));
+      return { course, score };
     })
     .filter(({ score }) => score >= 0.18)
     .sort((a, b) => b.score - a.score)
