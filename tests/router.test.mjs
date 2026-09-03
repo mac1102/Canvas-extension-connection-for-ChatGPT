@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  assignmentMatchesSearchTerms,
   chooseCourseScope,
   detectIntent,
   extractAssignmentSearchTerms,
@@ -113,4 +114,22 @@ test("resource search terms find course manual and syllabus-like files", () => {
   );
   assert.ok(terms.includes("manual"));
   assert.ok(resourceMatchesSearchTerms("Course Manual 2026.pdf", terms));
+});
+
+
+test("assignmentMatchesSearchTerms filters individual assignments", () => {
+  assert.equal(
+    assignmentMatchesSearchTerms(
+      "Progress Check: Individual Contribution to Group Project IV",
+      ["individual"]
+    ),
+    true
+  );
+  assert.equal(
+    assignmentMatchesSearchTerms(
+      "Weekly Goal 4: Data Acquisition",
+      ["individual"]
+    ),
+    false
+  );
 });
