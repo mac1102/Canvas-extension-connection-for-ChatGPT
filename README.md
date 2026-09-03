@@ -40,7 +40,8 @@ The extension intercepts Send, queries Canvas UvA, adds fresh context to the pro
 - **Assignment instruction/details lookup** with fuzzy title matching.
 - **Announcements**.
 - **Grades / enrollment score summaries**.
-- **Course files**.
+- **Course resources**: syllabus, Canvas Pages, and course files.
+- **Automatic readable-file extraction** for text/HTML/JSON/XML resources.
 - **Modules and module items**.
 - **Course fuzzy matching** so you can say a course name instead of finding its numeric Canvas ID.
 - **Context minimization** to avoid dumping the entire Canvas account into every prompt.
@@ -206,7 +207,7 @@ The router supports overlapping intents. A single prompt can request more than o
 | Assignment details | `@Canvas hướng dẫn Gold Foraging` | assignment list → fuzzy match → full assignment |
 | Announcements | `@Canvas thông báo mới` | course announcements |
 | Grades | `@Canvas điểm hiện tại` | student enrollments / scores |
-| Files | `@Canvas lecture slides` | recently updated course files |
+| Resources | `@Canvas tìm course manual của CONNECTIONS` | syllabus + Canvas Pages + matching course files; readable text files are fetched directly |
 | Modules | `@Canvas week 3 module` | modules + module items |
 
 The keyword router includes common English and Vietnamese forms, plus limited typo tolerance for longer keywords (for example `assigment` → `assignment`). Course and assignment names are matched separately with light singular/plural tolerance, so `connection` can match a course prefix such as `CONNECTIONS` without hard-coding the course.
@@ -375,3 +376,24 @@ This first release intentionally does **not**:
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+
+## Course manuals, syllabus and attached resources
+
+Resource queries are handled differently from a plain file listing. For prompts such as:
+
+```text
+@Canvas tìm course manual của CONNECTIONS
+@Canvas đọc syllabus course CONNECTIONS
+@Canvas tìm lecture notes tuần này
+```
+
+the extension now checks three Canvas sources for each matched course:
+
+1. the course `syllabus_body`;
+2. Canvas Pages and their full page bodies;
+3. course Files, ranked by the meaningful terms in the request.
+
+For readable web/text formats (`text/*`, JSON, XML/XHTML), the service worker fetches the file contents directly and includes a bounded text extract in the live context.
+
+Binary documents such as PDF, DOCX, PPTX and XLSX are currently returned with metadata and the Canvas download URL, but the extension does **not** yet bundle a full binary-document parser. This keeps the first release dependency-free and avoids shipping a large PDF/Office parsing runtime. A future release can add optional PDF/DOCX extraction without changing the Canvas authentication model.
