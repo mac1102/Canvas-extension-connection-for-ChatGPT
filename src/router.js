@@ -256,6 +256,57 @@ export function chooseCourseScope(query, courses) {
 }
 
 
+const ASSIGNMENT_QUERY_STOPWORDS = new Set([
+  "canvas", "github", "check", "xem", "tim", "find", "show", "list",
+  "assignment", "assignments", "assigment", "assigments", "task", "tasks",
+  "bai", "tap", "course", "mon", "nao", "la", "nhung", "co", "gi", "what",
+  "which", "are", "is", "the", "a", "an", "of", "in", "for", "my", "me",
+  "please", "cho", "toi", "minh"
+]);
+
+export function extractAssignmentSearchTerms(query, matchedCourses = []) {
+  const courseTokens = new Set();
+
+  for (const course of matchedCourses || []) {
+    const name = normalizeText(course?.name || "");
+    const prefix = name.includes(":") ? name.split(":", 1)[0] : name;
+    for (const token of prefix.split(" ").filter(Boolean)) {
+      courseTokens.add(canonicalToken(token));
+    }
+    for (const token of normalizeText(course?.course_code || "").split(" ").filter(Boolean)) {
+      courseTokens.add(canonicalToken(token));
+    }
+  }
+
+  return [...new Set(
+    normalizeText(query)
+      .split(" ")
+      .filter(Boolean)
+      .map(canonicalToken)
+      .filter((token) => token.length >= 3)
+      .filter((token) => !ASSIGNMENT_QUERY_STOPWORDS.has(token))
+      .filter((token) => !courseTokens.has(token))
+  )];
+}
+
+export function assignmentMatchesSearchTerms(assignmentName, terms) {
+  if (!terms?.length) return true;
+  const nameTokens = normalizeText(assignmentName)
+    .split(" ")
+    .filter(Boolean)
+    .map(canonicalToken);
+
+  return terms.every((term) =>
+    nameTokens.some((nameToken) =>
+      nameToken === term ||
+      nameToken.includes(term) ||
+      term.includes(nameToken) ||
+      (term.length >= 6 && nameToken.length >= 6 && editDistanceAtMostOne(nameToken, term))
+    )
+  );
+}
+
+
 const RESOURCE_QUERY_STOPWORDS = new Set([
   "canvas", "github", "check", "xem", "tim", "find", "show", "list", "get", "fetch",
   "file", "files", "pdf", "document", "documents", "material", "materials",
