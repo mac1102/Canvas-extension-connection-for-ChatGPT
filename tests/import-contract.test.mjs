@@ -5,7 +5,7 @@ import * as router from "../src/router.js";
 
 test("background router imports exist as router exports", () => {
   const source = fs.readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
-  const match = source.match(/import\s*\{([\s\S]*?)\}\s*from\s*["']\.\/router\.js["'];/);
+  const match = source.match(/import\s*\{([^}]*)\}\s*from\s*["']\.\/router\.js["'];/);
   assert.ok(match, "background.js must import router helpers from ./router.js");
 
   const importedNames = match[1]
