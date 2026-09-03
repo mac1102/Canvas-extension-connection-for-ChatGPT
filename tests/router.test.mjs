@@ -3,10 +3,13 @@ import assert from "node:assert/strict";
 import {
   chooseCourseScope,
   detectIntent,
+  extractAssignmentSearchTerms,
+  extractResourceSearchTerms,
   normalizeText,
   parseTimeWindow,
   rankAssignments,
   rankCourses,
+  resourceMatchesSearchTerms,
   similarityScore
 } from "../src/router.js";
 
@@ -92,4 +95,22 @@ test("parseTimeWindow handles today and this week", () => {
   const week = parseTimeWindow("tuần này", now);
   assert.equal(week.label, "this week");
   assert.ok(week.end > week.start);
+});
+
+
+test("assignment search terms keep meaningful qualifiers such as individual", () => {
+  const terms = extractAssignmentSearchTerms(
+    "@Canvas check xem assignment nào là individual assignment",
+    []
+  );
+  assert.deepEqual(terms, ["individual"]);
+});
+
+test("resource search terms find course manual and syllabus-like files", () => {
+  const terms = extractResourceSearchTerms(
+    "@Canvas tìm course manual của CONNECTIONS",
+    [{ name: "CONNECTIONS: Linking data for better interventions", course_code: "738200001Y" }]
+  );
+  assert.ok(terms.includes("manual"));
+  assert.ok(resourceMatchesSearchTerms("Course Manual 2026.pdf", terms));
 });
