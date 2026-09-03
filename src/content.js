@@ -290,7 +290,13 @@
       const toast = document.createElement("div");
       toast.className = "canvas-live-toast";
       toast.innerHTML = '<div class="canvas-live-toast__status"></div><div class="canvas-live-toast__message"></div><button class="canvas-live-toast__settings" type="button">Settings</button>';
-      toast.querySelector(".canvas-live-toast__settings").addEventListener("click", () => chrome.runtime.openOptionsPage());
+      toast.querySelector(".canvas-live-toast__settings").addEventListener("click", async () => {
+        try {
+          await chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+        } catch (error) {
+          console.warn("Canvas Live: could not open extension settings", error);
+        }
+      });
       document.body.appendChild(toast);
       state.toast = toast;
     }
