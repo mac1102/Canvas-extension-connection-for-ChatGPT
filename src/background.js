@@ -1,9 +1,13 @@
 import { CanvasClient, CanvasApiError } from "./canvas-client.js";
 import {
+  assignmentMatchesSearchTerms,
   chooseCourseScope,
   detectIntent,
+  extractAssignmentSearchTerms,
+  extractResourceSearchTerms,
   parseTimeWindow,
-  rankAssignments
+  rankAssignments,
+  resourceMatchesSearchTerms
 } from "./router.js";
 
 const DEFAULT_SETTINGS = Object.freeze({
@@ -183,7 +187,7 @@ async function fetchCanvasContext(query) {
     !intents.includes("assignmentDetail") &&
     !intents.includes("deadlines")
   ) {
-    await addAssignmentListContext({ client, scopedCourses, scope, settings, sections });
+    await addAssignmentListContext({ client, query, scopedCourses, scope, settings, sections });
   }
 
   if (intents.includes("deadlines")) {
@@ -218,11 +222,7 @@ async function fetchCanvasContext(query) {
   }
 
   if (intents.includes("files")) {
-    const fileResults = await mapWithConcurrency(scopedCourses.slice(0, 4), 3, async (course) => ({
-      course: courseLabel(course),
-      files: (await client.getFiles(course.id)).slice(0, 40).map(compactFile)
-    }));
-    sections.push({ title: "Course files (most recently updated first)", data: fileResults });
+    await addResourceContext({ client, query, scopedCourses, settings, sections });
   }
 
   if (intents.includes("modules")) {
@@ -262,21 +262,100 @@ async function fetchCanvasContext(query) {
   };
 }
 
-async function addAssignmentListContext({ client, scopedCourses, scope, settings, sections }) {
+async function addAssignmentListContext({ client, query, scopedCourses, scope, settings, sections }) {
   const targetCourses = scopedCourses.slice(0, scope.matched ? 3 : 8);
+  const searchTerms = extractAssignmentSearchTerms(query, scope.matched ? targetCourses : []);
   const results = await mapWithConcurrency(targetCourses, 3, async (course) => {
     const assignments = await client.getAssignments(course.id);
+    const filtered = assignments
+      .filter((item) => settings.includeSubmitted || !item?.submission?.submitted_at)
+      .filter((item) => assignmentMatchesSearchTerms(item?.name || "", searchTerms));
+
     return {
       course: courseLabel(course),
-      assignments: assignments
-        .filter((item) => settings.includeSubmitted || !item?.submission?.submitted_at)
-        .slice(0, 100)
-        .map((item) => compactAssignment(item, settings))
+      search_terms: searchTerms,
+      assignments: filtered.slice(0, 100).map((item) => compactAssignmentListItem(item))
     };
   });
 
   sections.push({
-    title: scope.matched ? "Assignments for matched course" : "Assignments across active courses",
+    title: searchTerms.length
+      ? "Assignments matching request"
+      : (scope.matched ? "Assignments for matched course" : "Assignments across active courses"),
+    data: results
+  });
+}
+
+async function addResourceContext({ client, query, scopedCourses, settings, sections }) {
+  const targetCourses = scopedCourses.slice(0, 4);
+  const searchTerms = extractResourceSearchTerms(query, targetCourses);
+
+  const results = await mapWithConcurrency(targetCourses, 2, async (course) => {
+    const [details, files, pages] = await Promise.all([
+      client.getCourseDetails(course.id),
+      client.getFiles(course.id),
+      client.getPages(course.id)
+    ]);
+
+    const matchingFiles = files
+      .filter((file) => resourceMatchesSearchTerms(
+        [file?.display_name, file?.filename].filter(Boolean).join(" "),
+        searchTerms
+      ))
+      .slice(0, 12);
+
+    const matchingPages = pages
+      .filter((page) => resourceMatchesSearchTerms(
+        [page?.title, page?.url].filter(Boolean).join(" "),
+        searchTerms
+      ))
+      .slice(0, 8);
+
+    const fullPages = await mapWithConcurrency(matchingPages, 2, async (page) => {
+      const full = await client.getPage(course.id, page.url);
+      return {
+        title: full?.title,
+        url: full?.url,
+        updated_at: full?.updated_at,
+        html_url: full?.html_url,
+        body: settings.includeDescriptions ? truncate(cleanHtml(full?.body || ""), 5000) : undefined
+      };
+    });
+
+    const enrichedFiles = await mapWithConcurrency(matchingFiles, 2, async (file) => {
+      let extracted = null;
+      try {
+        extracted = await client.getReadableFileText(file, 7000);
+      } catch (error) {
+        extracted = { readable: false, reason: error?.message || String(error) };
+      }
+
+      return {
+        ...compactFile(file),
+        extracted_text: extracted?.readable ? extracted.text : undefined,
+        readable_in_extension: Boolean(extracted?.readable),
+        unreadable_reason: extracted?.readable ? undefined : extracted?.reason
+      };
+    });
+
+    const syllabus = details?.syllabus_body
+      ? {
+          course: courseLabel(course),
+          body: truncate(cleanHtml(details.syllabus_body), 7000)
+        }
+      : null;
+
+    return {
+      course: courseLabel(course),
+      search_terms: searchTerms,
+      syllabus,
+      pages: fullPages,
+      files: enrichedFiles
+    };
+  });
+
+  sections.push({
+    title: "Course resources (syllabus, pages, files)",
     data: results
   });
 }
@@ -377,6 +456,21 @@ function compactCourse(course) {
     end_at: course.end_at,
     current_score: enrollment?.computed_current_score ?? enrollment?.computed_final_score ?? null,
     current_grade: enrollment?.computed_current_grade ?? enrollment?.computed_final_grade ?? null
+  };
+}
+
+function compactAssignmentListItem(item) {
+  const submission = item?.submission || null;
+  return {
+    id: item?.id,
+    name: item?.name,
+    due_at: item?.due_at,
+    points_possible: item?.points_possible,
+    html_url: item?.html_url,
+    status: submission?.workflow_state || null,
+    submitted_at: submission?.submitted_at || null,
+    missing: submission?.missing ?? null,
+    late: submission?.late ?? null
   };
 }
 
