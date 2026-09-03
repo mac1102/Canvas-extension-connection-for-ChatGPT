@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Canvas Live</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <div class="brand"><span class="dot"></span><div><strong>Canvas Live</strong><small>for ChatGPT</small></div></div>
+    <div id="state" class="state">Checking…</div>
+    <p id="detail" class="detail">Reading extension status.</p>
+    <div class="actions">
+      <button id="test" class="primary" type="button">Test Canvas</button>
+      <button id="settings" type="button">Settings</button>
+    </div>
+    <p class="tip">Invoke with <code>@Canvas</code> in a ChatGPT prompt. Every invocation fetches fresh data.</p>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
