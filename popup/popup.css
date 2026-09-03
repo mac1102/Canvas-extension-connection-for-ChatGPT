@@ -1,0 +1,20 @@
+:root { color-scheme: light dark; font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { width: 330px; margin: 0; background: Canvas; color: CanvasText; }
+main { padding: 17px; }
+.brand { display: flex; align-items: center; gap: 9px; }
+.brand > div { display: grid; }
+.brand strong { font-size: 14px; }
+.brand small { font-size: 11px; opacity: .55; }
+.dot { width: 10px; height: 10px; border-radius: 999px; background: #7c3aed; box-shadow: 0 0 0 4px color-mix(in srgb, #7c3aed 14%, transparent); }
+.state { margin-top: 20px; font-size: 24px; font-weight: 760; letter-spacing: -.035em; }
+.state[data-kind="success"] { color: #16a34a; }
+.state[data-kind="error"] { color: #dc2626; }
+.state[data-kind="loading"] { opacity: .7; }
+.detail { min-height: 38px; margin: 6px 0 15px; font-size: 12px; line-height: 1.5; opacity: .65; }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+button { min-height: 37px; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 8px; background: color-mix(in srgb, Canvas 92%, currentColor 8%); color: CanvasText; cursor: pointer; font: inherit; font-size: 12px; font-weight: 700; }
+button.primary { background: #7c3aed; color: white; border-color: #7c3aed; }
+button:disabled { opacity: .55; cursor: progress; }
+.tip { margin: 15px 0 0; padding-top: 13px; border-top: 1px solid color-mix(in srgb, currentColor 10%, transparent); font-size: 11px; line-height: 1.5; opacity: .6; }
+code { font-family: Consolas, monospace; }
