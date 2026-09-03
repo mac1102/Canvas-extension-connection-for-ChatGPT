@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Canvas Live for ChatGPT",
+  "version": "0.1.0",
+  "description": "Fetch fresh Canvas LMS context when you invoke @Canvas in ChatGPT.",
+  "minimum_chrome_version": "114",
+  "permissions": ["storage"],
+  "host_permissions": ["https://canvas.uva.nl/*"],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["src/content.js"],
+      "css": ["src/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Canvas Live for ChatGPT",
+    "default_popup": "popup/popup.html"
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  }
+}
