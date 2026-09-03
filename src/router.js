@@ -257,7 +257,7 @@ export function chooseCourseScope(query, courses) {
 
 
 const ASSIGNMENT_QUERY_STOPWORDS = new Set([
-  "canvas", "github", "check", "xem", "tim", "find", "show", "list",
+  "canvas", "canva", "github", "check", "xem", "tim", "find", "show", "list",
   "assignment", "assignments", "assigment", "assigments", "task", "tasks",
   "bai", "tap", "course", "mon", "nao", "la", "nhung", "co", "gi", "what",
   "which", "are", "is", "the", "a", "an", "of", "in", "for", "my", "me",
@@ -308,7 +308,7 @@ export function assignmentMatchesSearchTerms(assignmentName, terms) {
 
 
 const RESOURCE_QUERY_STOPWORDS = new Set([
-  "canvas", "github", "check", "xem", "tim", "find", "show", "list", "get", "fetch",
+  "canvas", "canva", "github", "check", "xem", "tim", "find", "show", "list", "get", "fetch",
   "file", "files", "pdf", "document", "documents", "material", "materials",
   "course", "mon", "tai", "lieu", "giao", "trinh", "de", "cuong",
   "co", "gi", "nao", "la", "cua", "cho", "toi", "minh", "what", "which",
