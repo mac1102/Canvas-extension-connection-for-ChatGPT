@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Canvas Live for ChatGPT — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Canvas Live for ChatGPT</p>
+        <h1>Connect Canvas UvA</h1>
+        <p class="lede">Your token stays inside the extension. Canvas data is fetched only when you invoke <code>@Canvas</code> in ChatGPT.</p>
+      </div>
+      <div id="connectionBadge" class="badge">Not configured</div>
+    </header>
+
+    <section class="card">
+      <h2>Connection</h2>
+      <label>
+        <span>Canvas instance</span>
+        <input id="baseUrl" type="url" value="https://canvas.uva.nl" readonly>
+        <small>This build intentionally requests host access only to Canvas UvA.</small>
+      </label>
+
+      <label>
+        <span>Canvas access token</span>
+        <div class="token-row">
+          <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new token to save or replace the current token">
+          <button id="toggleToken" class="button secondary" type="button">Show</button>
+        </div>
+        <small id="tokenState">No token saved yet.</small>
+      </label>
+
+      <div class="actions">
+        <button id="save" class="button primary" type="button">Save settings</button>
+        <button id="test" class="button secondary" type="button">Test connection</button>
+        <button id="clearToken" class="button danger" type="button">Remove token</button>
+      </div>
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+    </section>
+
+    <section class="card">
+      <h2>Live-fetch behavior</h2>
+      <div class="grid two">
+        <label>
+          <span>Request timeout</span>
+          <select id="timeoutMs">
+            <option value="8000">8 seconds</option>
+            <option value="15000">15 seconds</option>
+            <option value="20000">20 seconds</option>
+            <option value="30000">30 seconds</option>
+          </select>
+        </label>
+        <label>
+          <span>Maximum Canvas context</span>
+          <select id="maxContextChars">
+            <option value="10000">Compact · 10k chars</option>
+            <option value="18000">Balanced · 18k chars</option>
+            <option value="24000">Detailed · 24k chars</option>
+            <option value="30000">Maximum · 30k chars</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="check">
+        <input id="includeDescriptions" type="checkbox">
+        <span><strong>Include assignment and announcement text</strong><small>Needed when you ask ChatGPT to explain instructions or announcements.</small></span>
+      </label>
+
+      <label class="check">
+        <input id="includeSubmitted" type="checkbox">
+        <span><strong>Include already-submitted assignments</strong><small>Useful for status/history questions; disable for a tighter pending-work view.</small></span>
+      </label>
+
+      <label class="check">
+        <input id="debug" type="checkbox">
+        <span><strong>Debug logging</strong><small>Logs routing metadata to the extension service-worker console. Never logs the access token.</small></span>
+      </label>
+    </section>
+
+    <section class="card usage">
+      <h2>How to use it</h2>
+      <div class="examples">
+        <code>@Canvas deadline tuần này là gì?</code>
+        <code>@Canvas đọc instruction Gold Foraging</code>
+        <code>@Canvas Robot Camp có announcement mới không?</code>
+        <code>@Canvas điểm các môn hiện tại của tôi</code>
+        <code>@Canvas tìm file lecture slides của course này</code>
+      </div>
+      <p>Every send containing <code>@Canvas</code> performs a new Canvas API fetch. Canvas responses are not cached by the extension.</p>
+    </section>
+
+    <section class="card warning">
+      <h2>Security notes</h2>
+      <p>The token is equivalent to account access within its Canvas permissions. Do not commit it to GitHub or paste it into chats. This extension is read-only by design and issues only GET requests to Canvas.</p>
+      <p>Fresh Canvas context is included in the ChatGPT prompt when you invoke <code>@Canvas</code>, because ChatGPT needs that data to answer your request. The Canvas token itself is never included.</p>
+    </section>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>
