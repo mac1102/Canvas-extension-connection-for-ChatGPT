@@ -22,7 +22,13 @@ test("detectIntent recognizes Vietnamese deadline requests", () => {
 test("detectIntent recognizes assignment instruction requests", () => {
   const intents = detectIntent("@Canvas đọc hướng dẫn và yêu cầu của Gold Foraging");
   assert.ok(intents.includes("assignmentDetail"));
-  assert.ok(intents.includes("deadlines"));
+  assert.ok(intents.includes("assignments"));
+});
+
+test("detectIntent tolerates common assignment typos", () => {
+  const intents = detectIntent("@Canvas connection có những assigment gì?");
+  assert.ok(intents.includes("assignments"));
+  assert.ok(!intents.includes("dashboard"));
 });
 
 test("detectIntent recognizes announcements, grades, files and modules", () => {
@@ -61,6 +67,20 @@ test("chooseCourseScope narrows when course name is explicit", () => {
   const scoped = chooseCourseScope("Robot Camp deadline", courses);
   assert.equal(scoped.matched, true);
   assert.equal(scoped.courses[0].id, 1);
+});
+
+test("chooseCourseScope matches singular query to plural course prefix", () => {
+  const courses = [
+    {
+      id: 60400,
+      name: "CONNECTIONS: Linking data for better interventions in health or mobility systems",
+      course_code: "738200001Y"
+    },
+    { id: 57815, name: "BUILDING BLOCKS: Experimenting with digital interventions", course_code: "738100002Y" }
+  ];
+  const scoped = chooseCourseScope("@Canvas connection có những assigment gì?", courses);
+  assert.equal(scoped.matched, true);
+  assert.equal(scoped.courses[0].id, 60400);
 });
 
 test("parseTimeWindow handles today and this week", () => {
