@@ -152,12 +152,93 @@ export class CanvasClient {
     });
   }
 
+  getCourseDetails(courseId) {
+    return this.get(`/api/v1/courses/${courseId}`, {
+      "include[]": ["syllabus_body", "term"]
+    });
+  }
+
+  getPages(courseId) {
+    return this.getAll(`/api/v1/courses/${courseId}/pages`, {
+      sort: "updated_at",
+      order: "desc"
+    }, 4);
+  }
+
+  getPage(courseId, pageUrl) {
+    return this.get(`/api/v1/courses/${courseId}/pages/${encodeURIComponent(pageUrl)}`);
+  }
+
   getFiles(courseId, searchTerm = "") {
     return this.getAll(`/api/v1/courses/${courseId}/files`, {
       search_term: searchTerm || undefined,
       sort: "updated_at",
       order: "desc"
     }, 4);
+  }
+
+  async getReadableFileText(file, maxChars = 12000) {
+    const rawUrl = file?.url;
+    if (!rawUrl) return { readable: false, reason: "No download URL" };
+
+    const url = new URL(rawUrl, `${this.baseUrl}/`);
+    if (url.protocol !== "https:" || url.hostname !== "canvas.uva.nl") {
+      return { readable: false, reason: "File URL is outside the allowed Canvas UvA host" };
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${this.token}` },
+        cache: "no-store",
+        credentials: "omit",
+        redirect: "follow",
+        signal: controller.signal
+      });
+
+      if (!response.ok) throw await toCanvasError(response, url.pathname);
+
+      const contentType = String(response.headers.get("content-type") || file?.["content-type"] || "")
+        .split(";", 1)[0]
+        .toLowerCase();
+
+      const readable =
+        contentType.startsWith("text/") ||
+        ["application/json", "application/xml", "application/xhtml+xml"].includes(contentType);
+
+      if (!readable) {
+        return {
+          readable: false,
+          content_type: contentType || null,
+          reason: "Binary document parsing is not bundled in this extension"
+        };
+      }
+
+      const text = await response.text();
+      return {
+        readable: true,
+        content_type: contentType || null,
+        text: text.length <= maxChars ? text : `${text.slice(0, maxChars - 1)}…`,
+        truncated: text.length > maxChars
+      };
+    } catch (error) {
+      if (error instanceof CanvasApiError) throw error;
+      if (error?.name === "AbortError") {
+        throw new CanvasApiError(`Canvas file request timed out after ${this.timeoutMs / 1000}s.`, {
+          endpoint: url.pathname,
+          cause: error
+        });
+      }
+      throw new CanvasApiError(`Could not fetch Canvas file: ${error?.message || String(error)}`, {
+        endpoint: url.pathname,
+        cause: error
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   getModules(courseId) {
