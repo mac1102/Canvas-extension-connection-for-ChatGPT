@@ -47,6 +47,9 @@ async function handleMessage(message, sender) {
   switch (message.type) {
     case "GET_STATUS":
       return getStatus();
+    case "OPEN_OPTIONS":
+      await chrome.runtime.openOptionsPage();
+      return { opened: true };
     case "SAVE_SETTINGS":
       return saveSettings(message.payload || {});
     case "CLEAR_TOKEN":
@@ -65,7 +68,7 @@ function validateSender(type, sender) {
   const url = sender?.url || "";
   const isExtensionPage = url.startsWith(`chrome-extension://${chrome.runtime.id}/`);
   const isChatGpt = /^https:\/\/(chatgpt\.com|chat\.openai\.com)\//.test(url);
-  const contentAllowed = new Set(["FETCH_CANVAS_CONTEXT", "GET_STATUS"]);
+  const contentAllowed = new Set(["FETCH_CANVAS_CONTEXT", "GET_STATUS", "OPEN_OPTIONS"]);
 
   if (isExtensionPage) return;
   if (isChatGpt && contentAllowed.has(type)) return;
