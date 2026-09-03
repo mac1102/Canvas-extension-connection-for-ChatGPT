@@ -178,6 +178,14 @@ async function fetchCanvasContext(query) {
     sections.push({ title: "Active courses", data: courses.map(compactCourse) });
   }
 
+  if (
+    intents.includes("assignments") &&
+    !intents.includes("assignmentDetail") &&
+    !intents.includes("deadlines")
+  ) {
+    await addAssignmentListContext({ client, scopedCourses, scope, settings, sections });
+  }
+
   if (intents.includes("deadlines")) {
     await addDeadlineContext({ client, query, courses, scopedCourses, scope, settings, sections });
   }
@@ -252,6 +260,25 @@ async function fetchCanvasContext(query) {
       contextChars: context.length
     }
   };
+}
+
+async function addAssignmentListContext({ client, scopedCourses, scope, settings, sections }) {
+  const targetCourses = scopedCourses.slice(0, scope.matched ? 3 : 8);
+  const results = await mapWithConcurrency(targetCourses, 3, async (course) => {
+    const assignments = await client.getAssignments(course.id);
+    return {
+      course: courseLabel(course),
+      assignments: assignments
+        .filter((item) => settings.includeSubmitted || !item?.submission?.submitted_at)
+        .slice(0, 100)
+        .map((item) => compactAssignment(item, settings))
+    };
+  });
+
+  sections.push({
+    title: scope.matched ? "Assignments for matched course" : "Assignments across active courses",
+    data: results
+  });
 }
 
 async function addDeadlineContext({ client, query, courses, scopedCourses, scope, settings, sections }) {
