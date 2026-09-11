@@ -101,25 +101,37 @@ export class CanvasClient {
         method: "GET",
         headers: { Authorization: `Bearer ${this.token}`, Accept: api ? "application/json" : "*/*" },
         credentials: "omit",
-        redirect: "manual",
+        redirect: "follow",
         cache: "no-store",
         signal
       });
-      if (!REDIRECT_STATUSES.has(response.status)) return { response, url };
 
+      // Real browser fetch follows redirects natively. Validate the final URL before
+      // consuming any response body. Fetch removes developer-set Authorization on a
+      // cross-origin redirect; we still reject any off-origin final response here.
+      if (response.url) {
+        let finalUrl;
+        try {
+          finalUrl = this.url(response.url, {}, api);
+        } catch {
+          await response.body?.cancel();
+          throw new CanvasApiError("Canvas attempted an untrusted redirect. The request was blocked.", { status: response.status || null });
+        }
+        return { response, url: finalUrl };
+      }
+
+      // Test doubles and some non-browser fetch implementations may return a raw 3xx
+      // even with redirect:"follow". Keep a bounded same-origin fallback for those.
+      if (!REDIRECT_STATUSES.has(response.status)) return { response, url };
       const location = response.headers.get("location");
       await response.body?.cancel();
       if (!location) throw new CanvasApiError("Canvas returned a redirect without a destination.", { status: response.status });
       if (redirectCount >= 3) throw new CanvasApiError("Canvas redirect limit reached.", { status: response.status });
-
-      let next;
       try {
-        next = new URL(location, url);
-        next = this.url(next, {}, api);
+        url = this.url(new URL(location, url), {}, api);
       } catch {
         throw new CanvasApiError("Canvas attempted an untrusted redirect. The request was blocked.", { status: response.status });
       }
-      url = next;
     }
     throw new CanvasApiError("Canvas redirect limit reached.");
   }

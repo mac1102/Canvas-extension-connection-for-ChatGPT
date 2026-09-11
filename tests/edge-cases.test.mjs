@@ -43,7 +43,7 @@ for (const status of [401, 403, 404]) test(`Canvas HTTP ${status} has bounded sa
   assert.equal(calls, 1);
 });
 
-test("Canvas follows same-origin API redirects without leaking the bearer token", async () => {
+test("Canvas follows same-origin API redirects using native follow mode", async () => {
   const seen = [];
   const client = new CanvasClient({ token: "secret", fetchImpl: async (url, init) => {
     seen.push({ url: String(url), auth: init.headers.Authorization, redirect: init.redirect });
@@ -55,11 +55,11 @@ test("Canvas follows same-origin API redirects without leaking the bearer token"
   const user = await client.getCurrentUser();
   assert.equal(user.name, "Canvas User");
   assert.equal(seen.length, 2);
-  assert.ok(seen.every((entry) => entry.auth === "Bearer secret" && entry.redirect === "manual"));
+  assert.ok(seen.every((entry) => entry.auth === "Bearer secret" && entry.redirect === "follow"));
   assert.ok(seen.every((entry) => new URL(entry.url).origin === "https://canvas.uva.nl"));
 });
 
-test("Canvas blocks cross-origin redirects before resending authorization", async () => {
+test("Canvas blocks cross-origin redirect fallback before a second authorized request", async () => {
   let calls = 0;
   const client = new CanvasClient({ token: "secret", fetchImpl: async () => {
     calls++;
@@ -67,6 +67,15 @@ test("Canvas blocks cross-origin redirects before resending authorization", asyn
   } });
   await assert.rejects(client.getCurrentUser(), /untrusted redirect/i);
   assert.equal(calls, 1);
+});
+
+test("Canvas rejects an off-origin final URL returned after native redirect following", async () => {
+  const client = new CanvasClient({ token: "secret", fetchImpl: async () => {
+    const response = new Response(JSON.stringify({ name: "stolen" }), { status: 200, headers: { "content-type": "application/json" } });
+    Object.defineProperty(response, "url", { value: "https://evil.example/api/v1/users/self" });
+    return response;
+  } });
+  await assert.rejects(client.getCurrentUser(), /untrusted redirect/i);
 });
 
 test("pagination cycle is marked partial instead of counted as complete", async () => {
