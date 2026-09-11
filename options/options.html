@@ -43,15 +43,20 @@
     </section>
 
     <section class="card">
-      <h2>Live-fetch behavior</h2>
+      <h2>Retrieval</h2>
+      <div class="grid two">
+        <label><span>Maximum document size</span><select id="maxDocumentBytes"><option value="1048576">1 MB</option><option value="8388608">8 MB</option><option value="16777216">16 MB</option></select></label>
+        <label><span>Maximum relationship depth</span><input id="maxDepth" type="number" min="0" max="3" step="1" required></label>
+      </div>
+      <label class="check"><input id="currentCoursesOnly" type="checkbox"><span>Prefer current courses for broad requests. Explicit course names include historical courses.</span></label>
       <div class="grid two">
         <label>
           <span>Request timeout</span>
           <select id="timeoutMs">
             <option value="8000">8 seconds</option>
             <option value="15000">15 seconds</option>
-            <option value="20000">20 seconds</option>
-            <option value="30000">30 seconds</option>
+
+
           </select>
         </label>
         <label>
@@ -81,6 +86,15 @@
       </label>
     </section>
 
+    <section class="card">
+      <h2>Groq AI Planner</h2>
+      <label class="check"><input id="groqEnabled" type="checkbox"><span>Enable Groq planner</span></label>
+      <label><span>Groq API key</span><input id="groqKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key"><small id="groqState"></small></label>
+      <label><span>Model</span><input readonly value="openai/gpt-oss-20b"></label>
+      <label><span>Planner mode</span><select id="plannerMode"><option value="local">Local only</option><option value="hybrid" selected>Hybrid</option><option value="preferred">AI planner preferred</option></select></label>
+      <div class="actions"><button id="testGroq" class="button secondary" type="button">Test Groq connection</button><button id="clearGroq" class="button danger" type="button">Remove Groq key</button></div>
+      <p>Groq plans retrieval. Groq does not receive raw Canvas course content. When enabled, only your short request and abstract operation names go to Groq. Pasted content, URLs, and detected sensitive queries stay with the local planner. Avoid including private text in your request.</p>
+    </section>
     <section class="card usage">
       <h2>How to use it</h2>
       <div class="examples">
@@ -90,11 +104,11 @@
         <code>@Canvas điểm các môn hiện tại của tôi</code>
         <code>@Canvas tìm file lecture slides của course này</code>
       </div>
-      <p>Every send containing <code>@Canvas</code> performs a new Canvas API fetch. Canvas responses are not cached by the extension.</p>
+      <p>Every send containing <code>@Canvas</code> performs a new Canvas API fetch. Responses are reused only within the current request and are not stored persistently.</p>
     </section>
 
     <section class="card warning">
-      <h2>Security notes</h2>
+      <h2>Privacy</h2>
       <p>The token is equivalent to account access within its Canvas permissions. Do not commit it to GitHub or paste it into chats. This extension is read-only by design and issues only GET requests to Canvas.</p>
       <p>Fresh Canvas context is included in the ChatGPT prompt when you invoke <code>@Canvas</code>, because ChatGPT needs that data to answer your request. The Canvas token itself is never included.</p>
     </section>

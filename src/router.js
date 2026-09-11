@@ -39,7 +39,7 @@ const INTENT_KEYWORDS = {
 export function normalizeText(value = "") {
   return String(value)
     .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
+    .replace(/\p{Diacritic}/gu, "").replace(/[đĐ]/g, "d")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
@@ -92,7 +92,7 @@ function tokenMatches(a, b) {
 
 function includesKeyword(normalized, keyword) {
   const normalizedKeyword = normalizeText(keyword);
-  if (normalized.includes(normalizedKeyword)) return true;
+  if (` ${normalized} `.includes(` ${normalizedKeyword} `)) return true;
 
   const keywordTokens = normalizedKeyword.split(" ").filter(Boolean);
   if (keywordTokens.length !== 1) return false;
@@ -218,7 +218,7 @@ export function parseTimeWindow(query, now = new Date()) {
     return { start, end, label: "tomorrow" };
   }
 
-  if (includesKeyword(normalized, "next week")) {
+  if (includesKeyword(normalized, "next week") || includesKeyword(normalized, "tuan sau")) {
     const day = start.getDay() || 7;
     start.setDate(start.getDate() + (8 - day));
     start.setHours(0, 0, 0, 0);

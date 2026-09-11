@@ -6,13 +6,14 @@ const settings = document.querySelector("#settings");
 settings.addEventListener("click", () => chrome.runtime.openOptionsPage());
 test.addEventListener("click", runTest);
 
-await refresh();
+try { await refresh(); } catch { render("Error", "Could not contact the extension. Reload it in Chrome.", "error"); }
 
 async function refresh() {
   const response = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
   if (!response?.ok) return render("Error", response?.error?.message || "Could not read status.", "error");
   if (!response.configured) return render("Not connected", "Open Settings and save a Canvas access token.", "neutral");
 
+  document.querySelector("#inspector").textContent = response.inspector ? JSON.stringify(response.inspector, null, 2) : "No request in this worker session.";
   const last = response.lastConnection;
   if (last?.ok && last.user?.name) {
     render("Connected", `${last.user.name} · ${formatTime(last.at)}`, "success");

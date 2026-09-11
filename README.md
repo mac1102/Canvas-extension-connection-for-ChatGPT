@@ -1,399 +1,120 @@
 # Canvas Live for ChatGPT
 
-A Manifest V3 Chrome extension that gives ChatGPT a **live, read-only bridge to Canvas UvA** when you type `@Canvas`.
+A Manifest V3 Chrome extension for fresh, read-only Canvas UvA context in ChatGPT. Type `@Canvas` with a question: the extension plans a retrieval, fetches relevant resources, parses selected documents locally, and attaches compact evidence to your prompt.
 
-Instead of syncing Canvas to a file or database, the extension fetches Canvas **at send time**. Every `@Canvas` invocation performs a fresh API request and then supplies only the relevant Canvas context to ChatGPT.
+**Groq plans retrieval. Groq does not receive raw Canvas course content.** Groq is optional; local planning works without a key and automatically takes over when Groq fails.
 
-> This project is a workaround for personal ChatGPT plans that do not expose custom MCP apps/connectors. It is not an official OpenAI or Instructure product.
+## Install or update
 
-## What it feels like
+Requires Chrome 140 or newer. Browser automation is tested with Chromium 153.
 
-Type in ChatGPT:
-
-```text
-@Canvas deadline tuần này là gì?
-```
-
-or:
-
-```text
-@Canvas đọc instruction Gold Foraging và giải thích tôi cần làm gì
-```
-
-or:
-
-```text
-@Canvas Robot Camp có announcement mới không?
-```
-
-The extension intercepts Send, queries Canvas UvA, adds fresh context to the prompt, and then submits the message to ChatGPT.
-
-## Features
-
-- **Live fetch on every invocation** — Canvas responses are not used from a sync file or extension cache.
-- **Read-only by design** — the Canvas client contains GET operations only.
-- **`@Canvas` detection** in the ChatGPT composer.
-- **Autocomplete-style hint** while typing `@Can…`.
-- **English + Vietnamese request routing**.
-- **Deadline / todo queries**.
-- **Assignment lists and submission status** when Canvas exposes it.
-- **Assignment instruction/details lookup** with fuzzy title matching.
-- **Announcements**.
-- **Grades / enrollment score summaries**.
-- **Course resources**: syllabus, Canvas Pages, and course files.
-- **Automatic readable-file extraction** for text/HTML/JSON/XML resources.
-- **Modules and module items**.
-- **Course fuzzy matching** so you can say a course name instead of finding its numeric Canvas ID.
-- **Context minimization** to avoid dumping the entire Canvas account into every prompt.
-- **Configurable timeout and context-size limit**.
-- **Connection test** and compact toolbar popup.
-- **No analytics, telemetry, ad SDK, CDN scripts, or extension-operated backend**.
-- **Token isolation** from the ChatGPT content script using Chrome storage access controls.
-
-## Architecture
-
-```text
-┌──────────────────────────────┐
-│        chatgpt.com           │
-│                              │
-│  "@Canvas deadline..."      │
-└──────────────┬───────────────┘
-               │ content-script message
-               │ (query only — no token)
-               ▼
-┌──────────────────────────────┐
-│ Chrome MV3 service worker    │
-│                              │
-│ intent routing               │
-│ course/assignment matching   │
-│ context minimization         │
-│ token access                 │
-└──────────────┬───────────────┘
-               │ HTTPS GET
-               │ Authorization: Bearer <token>
-               ▼
-┌──────────────────────────────┐
-│      canvas.uva.nl API       │
-│                              │
-│ courses / todo / assignments │
-│ announcements / files        │
-│ modules / enrollments        │
-└──────────────┬───────────────┘
-               │ fresh Canvas data
-               ▼
-┌──────────────────────────────┐
-│ Context returned to          │
-│ ChatGPT composer             │
-└──────────────────────────────┘
-```
-
-The Canvas access token never needs to enter the ChatGPT page.
-
-## Install
-
-### 1. Clone or download this repository
-
-```bash
+```sh
 git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 ```
 
-You do **not** need to run `npm install` to use the extension.
+Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-### 2. Load it into Chrome
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept the new Groq host permission.
 
-Open:
+## Configure
 
-```text
-chrome://extensions
-```
+1. In Canvas, open **Account → Settings → Approved Integrations → New Access Token**. Give it a descriptive name and an expiry. Your institution may restrict token creation.
+2. Open the extension's **Settings**, paste the Canvas token, save, then **Test connection**. This build deliberately supports only `https://canvas.uva.nl`.
+3. Optionally create a key in the [Groq console](https://console.groq.com/keys), paste it into **Groq AI Planner**, enable the planner, save, and **Test Groq connection**. The model is fixed to `openai/gpt-oss-20b`.
+4. Leave mode at **Hybrid**: simple requests stay local; ambiguous, relationship and multi-intent requests may use Groq. **Local only** disables planner network calls; **AI planner preferred** tries Groq for each eligible request. Groq is disabled until you explicitly enable it.
 
-Then:
+Saved keys are never displayed or returned to the content script. Blank fields preserve existing keys. Each key has a separate removal button. A connection test saves entered settings first; the Groq test sends only a synthetic assignment-list request.
 
-1. Enable **Developer mode**.
-2. Choose **Load unpacked**.
-3. Select the repository folder containing `manifest.json`.
-
-Chrome will open the extension settings page on first install.
-
-### 3. Add your Canvas access token
-
-In Canvas UvA:
+## Examples
 
 ```text
-Account → Settings → Approved Integrations → New Access Token
+@Canvas CONNECTIONS có những assignment gì?
+@Canvas deadline tuần này
+@Canvas điểm hiện tại
+@Canvas announcements
+@Canvas check xem assignment nào là individual
+@Canvas check xem tôi có bao nhiêu assignment, cái nào là individual và yêu cầu những gì?
+@Canvas course manual CONNECTIONS nói gì về grading?
+@Canvas xem tôi cần đọc gì để làm bài tuần sau
+@Canvas HISTORY assignments
 ```
 
-Copy the token when Canvas shows it.
+Explicit course names override current-course filtering, including historical courses. Broad queries prefer course dates, academic year, semester and activity signals. Counts describe the selected course scope, before assignment filters; partial inventories are explicitly marked. Individual work requires evidence in the assignment title or description; a missing group ID alone is not proof.
 
-In the extension settings:
-
-1. Paste the token into **Canvas access token**.
-2. Choose **Save settings**.
-3. Choose **Test connection**.
-4. Confirm the extension shows the Canvas account name.
-
-Do not put the token in this repository, a `.env` file committed to GitHub, screenshots, or ChatGPT messages.
-
-### 4. Use `@Canvas`
-
-Open or refresh `https://chatgpt.com` after installing the extension.
-
-Examples:
+## How it works
 
 ```text
-@Canvas tôi phải làm gì hôm nay?
+ChatGPT composer → request validation → deterministic plan + confidence
+                                      ↘ optional Groq structured plan
+                        validated RetrievalPlan
+                                  ↓
+Canvas metadata → local resource graph → ranked, bounded retrieval
+                                  ↓
+local document workers → ranked excerpts → JSON context budget → composer
 ```
 
-```text
-@Canvas deadline tuần này và cái nào chưa nộp?
-```
+The service worker is the only executor and credential holder. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
 
-```text
-@Canvas đọc instruction của Individual Integral
-```
+Assignment inventory and details run together when needed. Descriptions can lead to Canvas pages and files; cycles and duplicate resources are suppressed. Generic discovery ranks file/page/module metadata before downloading up to six candidates. Directly linked resources take priority. A request-local cache prevents duplicate GETs and is discarded after the request.
 
-```text
-@Canvas tìm announcement mới của Robot Camp
-```
+Document parsing happens in a local offscreen document's workers. PDF.js, ZIP extraction and an inert HTML/XML parser ship in `src/vendor`. Text is chunked and ranked lexically. The context budget drops whole low-priority records, preserves valid JSON, reports omitted records, and marks shortened excerpts. Retrieved content is treated as untrusted evidence, not instructions.
 
-```text
-@Canvas điểm hiện tại của các course là bao nhiêu?
-```
+## Supported resources and formats
 
-```text
-@Canvas lấy các file mới nhất của Robot Camp
-```
+- Current user; courses and course details; syllabus.
+- Assignments, details, assignment groups, rubrics where accessible, and your submission status/score.
+- Announcements, enrollment grades, todo, modules and module items, pages and page bodies, files and folders.
+- PDF text, DOCX paragraphs, PPTX slides/notes, TXT, Markdown, HTML, CSV, JSON and XML.
 
-```text
-@Canvas week 4 có module gì?
-```
+Canvas operations are GET-only. The extension does not submit assignments, change grades, upload, edit or delete Canvas data. It does not retrieve submission attachment bodies or external tools.
 
-## What happens when you press Send
+## Retrieval controls and limits
 
-For a prompt containing `@Canvas`:
+Settings control context size, document size, relationship depth, submitted assignments, current-course preference and debug metadata. Defaults: 18,000 context characters, 8 MB per document, depth 2 and 30 full-resource attempts. Hard limits include depth 3, 50 full resources, 180 HTTP attempts, 32 MB of accepted response bytes, 24 MB downloaded documents, 200,000 parsed text characters and a two-minute scheduling budget. Metadata lists stop after 30 pages; failures or caps mark them partial. Each Canvas call times out within 15 seconds; network/5xx errors may retry once. A 429 stops further calls in that request.
 
-1. The content script catches the Send action.
-2. It sends **only your request text** to the extension service worker.
-3. The service worker reads the token from trusted extension storage.
-4. The service worker gets the active course index from Canvas fresh.
-5. The router detects what kind of data your request needs.
-6. It narrows the request to likely courses/assignments where possible.
-7. It fetches the relevant Canvas endpoints with `cache: "no-store"`.
-8. It builds a size-limited live context block.
-9. The content script places that context in the ChatGPT prompt.
-10. ChatGPT receives the request plus the freshly fetched Canvas data.
+The popup's **Planner inspector** reports planner choice, local confidence, operations, fallback reason and execution counts. It contains no query text, course content, grades or keys and resets when the service worker restarts.
 
-There is no scheduled/background Canvas sync.
+## Privacy
 
-## Important Plus-plan limitation
+Canvas credentials stay in trusted extension storage and are transmitted only to Canvas for authentication. The Groq key is transmitted only to Groq in its authentication header. Neither key goes into planning messages or ChatGPT prompts.
 
-A browser extension cannot create a private/native ChatGPT tool channel. On a personal plan, this extension therefore supplies Canvas data through the **message composer**.
+With Groq enabled, a short user-written query and abstract operation names may go to Groq **before** Canvas retrieval. The payload builder accepts no Canvas objects or discovered metadata. It rejects multiline/pasted content, markup, URLs, known secrets and detected identifiers. No heuristic can recognize every private fact that a person types into natural language: keep private notes out of planning requests, or choose Local only.
 
-That means the Canvas context selected for the invocation becomes part of the ChatGPT message and may be visible in the conversation. This is intentional: ChatGPT must receive the Canvas data to answer from it.
+Selected retrieved Canvas context **is sent to ChatGPT** in your message so ChatGPT can answer. This is not an entirely local data flow. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
-The **Canvas access token is never included** in that context.
+## Troubleshooting and limitations
 
-If OpenAI later exposes native custom MCP/apps for the plan you use, the service-worker Canvas client/router in this project can be adapted into a native connector so Canvas data can travel through a dedicated tool channel instead.
+- **401:** replace an expired or revoked Canvas token. **403/404:** the resource may be locked, unpublished, unavailable or outside your permissions; other resources can still succeed.
+- **Groq key/rate limit/network/schema failure:** use the planner inspector to see the local fallback. Local only works without Groq.
+- **Files requiring redirects or another host:** this build refuses redirects and off-origin downloads to keep credentials on Canvas UvA. It reports missing content and provides a safe Canvas UI link. Some institution-hosted or CDN-backed files therefore cannot be extracted. Do not expect a redirected file's requirements to appear until its download path is supported safely.
+- **PDF:** no OCR, password entry, or visual chart interpretation. Scanned/encrypted/malformed PDFs can return no text. Extraction is capped at 150 pages; text and excerpts may omit later sections. Nonstandard fonts and layouts may extract imperfectly.
+- **Office:** text extraction omits images, embedded objects, macros and formatting. Legacy DOC/PPT/XLS and XLSX are unsupported. ZIP expansion is bounded; corrupt files fail independently.
+- **Matching:** lexical heuristics are not a complete semantic search engine. Courses with missing or ambiguous dates may be omitted or selected incorrectly; naming the course helps. Limits and inaccessible resources can make results partial.
+- **ChatGPT UI changes:** reload the extension and refresh the tab. Multiple composer/send selectors are used. If auto-send does not work, the enriched draft remains ready for manual Send. Edits made during retrieval are preserved.
+- **Long requests:** service-worker restarts or browser closure can interrupt work. No background sync or persistent course cache is used; retry the request.
 
-## Intent routing
+## Development and validation
 
-The router supports overlapping intents. A single prompt can request more than one category.
+Node 24 is only needed for development:
 
-| Intent | Example | Canvas data |
-| --- | --- | --- |
-| Dashboard | `@Canvas check Canvas` | courses + todo |
-| Assignments | `@Canvas CONNECTIONS có những assigment gì?` | fuzzy course match → full course assignment list |
-| Deadlines | `@Canvas deadline tuần này` | todo + targeted assignments |
-| Assignment details | `@Canvas hướng dẫn Gold Foraging` | assignment list → fuzzy match → full assignment |
-| Announcements | `@Canvas thông báo mới` | course announcements |
-| Grades | `@Canvas điểm hiện tại` | student enrollments / scores |
-| Resources | `@Canvas tìm course manual của CONNECTIONS` | syllabus + Canvas Pages + matching course files; readable text files are fetched directly |
-| Modules | `@Canvas week 3 module` | modules + module items |
-
-The keyword router includes common English and Vietnamese forms, plus limited typo tolerance for longer keywords (for example `assigment` → `assignment`). Course and assignment names are matched separately with light singular/plural tolerance, so `connection` can match a course prefix such as `CONNECTIONS` without hard-coding the course.
-
-## Read-only Canvas endpoints
-
-The implementation uses Canvas GET endpoints in these families:
-
-```text
-GET /api/v1/users/self
-GET /api/v1/courses
-GET /api/v1/users/self/todo
-GET /api/v1/courses/:course_id/assignments
-GET /api/v1/courses/:course_id/assignments/:assignment_id
-GET /api/v1/announcements
-GET /api/v1/courses/:course_id/files
-GET /api/v1/courses/:course_id/modules
-GET /api/v1/users/self/enrollments
-```
-
-No POST, PUT, PATCH, or DELETE Canvas request is implemented.
-
-## Security model
-
-### Token boundary
-
-The token is stored in `chrome.storage.local`. The service worker calls:
-
-```js
-chrome.storage.local.setAccessLevel({
-  accessLevel: "TRUSTED_CONTEXTS"
-});
-```
-
-where supported. This prevents the content script running on `chatgpt.com` from directly reading local extension storage.
-
-The content script asks the service worker for **Canvas context**, never for credentials.
-
-### Least-privilege host permission
-
-`manifest.json` requests only:
-
-```json
-"host_permissions": [
-  "https://canvas.uva.nl/*"
-]
-```
-
-It does not request broad `https://*/*` access.
-
-### No remote code
-
-All JavaScript and CSS ships inside the repository. There is no remote code execution or dynamically downloaded script.
-
-### Local-storage limitation
-
-Chrome extension local storage is not a hardware-backed secrets vault. Protect your local Chrome profile/device. If you suspect token exposure, revoke the token in Canvas and issue a new one.
-
-See [SECURITY.md](SECURITY.md) and [PRIVACY.md](PRIVACY.md).
-
-## Settings
-
-Open the extension toolbar popup → **Settings**, or Chrome's extension details → **Extension options**.
-
-Available settings:
-
-- request timeout: 8–30 seconds;
-- maximum Canvas context: 10k–30k characters;
-- include assignment/announcement descriptions;
-- include submitted assignments;
-- debug routing logs.
-
-The Canvas instance is fixed to `https://canvas.uva.nl` in this build to keep Chrome host permissions narrow.
-
-## Development
-
-Runtime dependencies: **none**.
-
-Node.js is used only for local validation/tests.
-
-```bash
-npm test
+```sh
+npm ci
 npm run check
+npm run scan-secrets
+npm test
+npx playwright install chromium
+npm run test:browser
+npm run build
 ```
 
-Test coverage currently focuses on the pure routing layer:
+`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, offscreen parsing and composer behavior. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
 
-- Vietnamese normalization;
-- intent recognition;
-- named-course matching;
-- named-assignment matching;
-- time-window parsing.
+## Manual Chrome check
 
-## Project structure
+After pulling and reloading, verify no extension registration errors, test Canvas and optionally Groq in Settings, then run the examples above in ChatGPT. Check the multi-intent response includes counts and evidence, the manual query includes grading excerpts, and disabling Groq still retrieves useful context. Check the popup inspector and compare answers to Canvas. Automated browser fixtures cannot verify your institution's live permissions, file hosting, or the current signed-in ChatGPT DOM.
 
-```text
-.
-├── manifest.json
-├── src/
-│   ├── background.js       # trusted service worker + context builder
-│   ├── canvas-client.js    # read-only Canvas API client
-│   ├── router.js           # intent/time/fuzzy routing helpers
-│   ├── content.js          # ChatGPT @Canvas integration
-│   └── content.css         # hint + live fetch status UI
-├── options/
-│   ├── options.html
-│   ├── options.js
-│   └── options.css
-├── popup/
-│   ├── popup.html
-│   ├── popup.js
-│   └── popup.css
-├── tests/
-│   └── router.test.mjs
-├── PRIVACY.md
-├── SECURITY.md
-├── CHANGELOG.md
-├── LICENSE
-└── README.md
-```
+## Implementation references
 
-## Troubleshooting
+The client follows the official [Canvas API](https://developerdocs.instructure.com/services/canvas), including [pagination](https://developerdocs.instructure.com/services/canvas/basics/file.pagination), [files](https://developerdocs.instructure.com/services/canvas/resources/files), [assignments](https://developerdocs.instructure.com/services/canvas/resources/assignments), and [modules](https://developerdocs.instructure.com/services/canvas/resources/modules). Planner configuration uses Groq's [strict structured outputs](https://console.groq.com/docs/structured-outputs) and [reasoning](https://console.groq.com/docs/reasoning). Chrome documents [trusted storage access](https://developer.chrome.com/docs/extensions/reference/api/storage) and [offscreen workers](https://developer.chrome.com/docs/extensions/reference/api/offscreen).
 
-### `Canvas access token is not configured`
-
-Open extension settings, paste the token, save, then test the connection.
-
-### `Canvas rejected the access token`
-
-The token may be expired/revoked or copied incorrectly. Generate a fresh token in Canvas and replace the stored token.
-
-### `Canvas denied access to this resource`
-
-Your Canvas user/token does not have permission to view that endpoint/resource, or the course restricts that content.
-
-### `@Canvas` does not trigger
-
-1. Confirm the extension is enabled in `chrome://extensions`.
-2. Refresh the ChatGPT tab after installing/reloading the extension.
-3. Make sure the message contains the exact mention `@Canvas`.
-4. Test Canvas from the toolbar popup.
-5. Check the extension service-worker console for errors if Debug logging is enabled.
-
-### Canvas data fetches but the message does not auto-send
-
-ChatGPT's DOM can change independently of this extension. The extension attempts several current send-button/composer selectors. If it cannot safely find an enabled Send button after attaching context, it leaves the enriched prompt in the composer and asks you to press Send once.
-
-### ChatGPT UI update breaks the extension
-
-This project integrates with the public ChatGPT web UI rather than an official browser-extension API. DOM changes can therefore require selector updates in `src/content.js`.
-
-## Current scope / non-goals
-
-This first release intentionally does **not**:
-
-- submit Canvas assignments;
-- upload files to Canvas;
-- edit courses;
-- mark items read/unread;
-- change grades;
-- run periodic Canvas sync jobs;
-- send the Canvas token to ChatGPT;
-- use an extension-operated backend;
-- pretend to be a native ChatGPT MCP connector.
-
-## License
-
-MIT. See [LICENSE](LICENSE).
-
-
-## Course manuals, syllabus and attached resources
-
-Resource queries are handled differently from a plain file listing. For prompts such as:
-
-```text
-@Canvas tìm course manual của CONNECTIONS
-@Canvas đọc syllabus course CONNECTIONS
-@Canvas tìm lecture notes tuần này
-```
-
-the extension now checks three Canvas sources for each matched course:
-
-1. the course `syllabus_body`;
-2. Canvas Pages and their full page bodies;
-3. course Files, ranked by the meaningful terms in the request.
-
-For readable web/text formats (`text/*`, JSON, XML/XHTML), the service worker fetches the file contents directly and includes a bounded text extract in the live context.
-
-Binary documents such as PDF, DOCX, PPTX and XLSX are currently returned with metadata and the Canvas download URL, but the extension does **not** yet bundle a full binary-document parser. This keeps the first release dependency-free and avoids shipping a large PDF/Office parsing runtime. A future release can add optional PDF/DOCX extraction without changing the Canvas authentication model.
+MIT for project code; bundled dependencies retain their licenses in `src/vendor/LICENSES.txt`. This is an independent project, not an official Instructure, Groq or OpenAI product.

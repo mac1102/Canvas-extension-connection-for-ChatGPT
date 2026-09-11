@@ -1,129 +1,43 @@
-const els = {
-  connectionBadge: document.querySelector("#connectionBadge"),
-  token: document.querySelector("#token"),
-  tokenState: document.querySelector("#tokenState"),
-  toggleToken: document.querySelector("#toggleToken"),
-  save: document.querySelector("#save"),
-  test: document.querySelector("#test"),
-  clearToken: document.querySelector("#clearToken"),
-  timeoutMs: document.querySelector("#timeoutMs"),
-  maxContextChars: document.querySelector("#maxContextChars"),
-  includeDescriptions: document.querySelector("#includeDescriptions"),
-  includeSubmitted: document.querySelector("#includeSubmitted"),
-  debug: document.querySelector("#debug"),
-  status: document.querySelector("#status")
-};
-
-await loadStatus();
-
-els.toggleToken.addEventListener("click", () => {
-  const showing = els.token.type === "text";
-  els.token.type = showing ? "password" : "text";
-  els.toggleToken.textContent = showing ? "Show" : "Hide";
-});
-
-els.save.addEventListener("click", saveSettings);
-els.test.addEventListener("click", testConnection);
-els.clearToken.addEventListener("click", clearToken);
-
-async function loadStatus() {
-  setBusy(true);
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "GET_STATUS" });
-    if (!response?.ok) throw new Error(response?.error?.message || "Could not read extension settings.");
-
-    els.timeoutMs.value = String(response.settings?.timeoutMs ?? 15000);
-    els.maxContextChars.value = String(response.settings?.maxContextChars ?? 18000);
-    els.includeDescriptions.checked = response.settings?.includeDescriptions !== false;
-    els.includeSubmitted.checked = response.settings?.includeSubmitted !== false;
-    els.debug.checked = Boolean(response.settings?.debug);
-    updateConfiguredState(response.configured, response.lastConnection);
-  } catch (error) {
-    showStatus(error.message, "error");
-  } finally {
-    setBusy(false);
-  }
+const $ = (id) => document.getElementById(id);
+const booleans = ["includeDescriptions", "includeSubmitted", "currentCoursesOnly", "groqEnabled", "debug"];
+const numbers = ["timeoutMs", "maxContextChars", "maxDocumentBytes", "maxDepth"];
+async function message(type, payload) {
+  const response = await chrome.runtime.sendMessage({ type, payload });
+  if (!response?.ok) throw new Error(response?.error?.message || "Extension request failed.");
+  return response;
 }
-
-async function saveSettings() {
-  setBusy(true);
-  showStatus("Saving…", "info");
-  try {
-    const payload = {
-      settings: {
-        timeoutMs: Number(els.timeoutMs.value),
-        maxContextChars: Number(els.maxContextChars.value),
-        includeDescriptions: els.includeDescriptions.checked,
-        includeSubmitted: els.includeSubmitted.checked,
-        debug: els.debug.checked
-      }
-    };
-    if (els.token.value.trim()) payload.token = els.token.value.trim();
-
-    const response = await chrome.runtime.sendMessage({ type: "SAVE_SETTINGS", payload });
-    if (!response?.ok) throw new Error(response?.error?.message || "Could not save settings.");
-
-    els.token.value = "";
-    updateConfiguredState(response.configured);
-    showStatus("Settings saved. Use Test connection to verify the token.", "success");
-  } catch (error) {
-    showStatus(error.message, "error");
-  } finally {
-    setBusy(false);
-  }
+function configured(response) {
+  $("connectionBadge").textContent = response.configured ? "Canvas token saved" : "Canvas not configured";
+  $("tokenState").textContent = response.configured ? "Token saved. Leave blank to keep it." : "No Canvas token saved.";
+  $("groqState").textContent = response.groqConfigured ? "Groq key saved. Leave blank to keep it." : "No Groq key saved. Local planning remains available.";
 }
-
-async function testConnection() {
-  if (els.token.value.trim()) await saveSettings();
-  setBusy(true);
-  showStatus("Contacting Canvas UvA…", "info");
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "TEST_CONNECTION" });
-    if (!response?.ok) throw new Error(response?.error?.message || "Canvas connection failed.");
-    updateConfiguredState(true, { ok: true, at: response.checkedAt, user: response.user });
-    showStatus(`Connected as ${response.user?.name || response.user?.short_name || "Canvas user"}.`, "success");
-  } catch (error) {
-    showStatus(error.message, "error");
-    els.connectionBadge.textContent = "Connection failed";
-    els.connectionBadge.dataset.kind = "error";
-  } finally {
-    setBusy(false);
-  }
+async function load() {
+  const response = await message("GET_STATUS");
+  for (const key of booleans) $(key).checked = Boolean(response.settings[key]);
+  for (const key of numbers) $(key).value = response.settings[key];
+  $("plannerMode").value = response.settings.plannerMode;
+  configured(response);
 }
-
-async function clearToken() {
-  if (!confirm("Remove the saved Canvas token from this browser extension?")) return;
-  setBusy(true);
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "CLEAR_TOKEN" });
-    if (!response?.ok) throw new Error(response?.error?.message || "Could not remove token.");
-    els.token.value = "";
-    updateConfiguredState(false);
-    showStatus("Canvas token removed.", "success");
-  } catch (error) {
-    showStatus(error.message, "error");
-  } finally {
-    setBusy(false);
-  }
+async function save() {
+  for (const key of numbers) if (!$(key).checkValidity()) throw new Error(`Check the value for ${$(key).labels?.[0]?.textContent.trim() || key}.`);
+  const settings = { plannerMode: $("plannerMode").value };
+  for (const key of booleans) settings[key] = $(key).checked;
+  for (const key of numbers) settings[key] = Number($(key).value);
+  const response = await message("SAVE_SETTINGS", { settings, token: $("token").value.trim(), groqKey: $("groqKey").value.trim() });
+  $("token").value = ""; $("groqKey").value = ""; configured(response);
+  return "Settings saved.";
 }
-
-function updateConfiguredState(configured, lastConnection = null) {
-  els.connectionBadge.textContent = configured ? "Token saved" : "Not configured";
-  els.connectionBadge.dataset.kind = configured ? "success" : "neutral";
-  els.tokenState.textContent = configured
-    ? "A token is saved. Leave the field blank to keep it, or paste a new token to replace it."
-    : "No token saved yet.";
-
-  if (lastConnection?.ok && lastConnection?.user?.name) {
-    els.connectionBadge.textContent = `Connected · ${lastConnection.user.name}`;
-  }
+async function action(work) {
+  for (const button of document.querySelectorAll("button")) button.disabled = true;
+  $("status").textContent = "Working…";
+  try { $("status").textContent = await work(); $("status").dataset.kind = "success"; }
+  catch (error) { $("status").textContent = error.message; $("status").dataset.kind = "error"; }
+  finally { for (const button of document.querySelectorAll("button")) button.disabled = false; }
 }
-
-function setBusy(busy) {
-  for (const button of [els.save, els.test, els.clearToken]) button.disabled = busy;
-}
-
-function showStatus(message, kind) {
-  els.status.textContent = message;
-  els.status.dataset.kind = kind;
-}
+$("save").onclick = () => action(save);
+$("test").onclick = () => action(async () => { await save(); const r = await message("TEST_CONNECTION"); return `Connected as ${r.user?.name || "Canvas user"}.`; });
+$("testGroq").onclick = () => action(async () => { await save(); const r = await message("TEST_GROQ"); return `Groq connected: ${r.model}. Structured retrieval plan validated.`; });
+$("clearToken").onclick = () => action(async () => { await message("CLEAR_TOKEN"); $("token").value = ""; await load(); return "Canvas token removed."; });
+$("clearGroq").onclick = () => action(async () => { await message("CLEAR_GROQ_KEY"); $("groqKey").value = ""; await load(); return "Groq key removed. Local planner is available."; });
+$("toggleToken").onclick = () => { $("token").type = $("token").type === "password" ? "text" : "password"; $("toggleToken").textContent = $("token").type === "password" ? "Show" : "Hide"; };
+await action(async () => { await load(); return "Settings loaded."; });

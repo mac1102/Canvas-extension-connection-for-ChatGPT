@@ -1,28 +1,28 @@
 name: CI
-
 on:
   push:
     branches: ["main"]
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
-
-      - name: Syntax check
-        run: npm run check
-
-      - name: Unit tests
+          cache: npm
+      - run: npm ci
+      - name: Syntax and secret checks
+        run: npm run check && npm run scan-secrets
+      - name: Unit, privacy, integration, manifest and import contracts
         run: npm test
+      - name: Verify checked-in parser bundles
+        run: npm run build && git diff --exit-code -- src/vendor
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Real MV3 and composer browser tests
+        run: npm run test:browser

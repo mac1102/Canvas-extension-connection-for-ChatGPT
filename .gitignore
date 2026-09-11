@@ -5,3 +5,10 @@ coverage/
 *.log
 .env
 .env.*
+
+.test-artifacts/
+playwright-report/
+test-results/
+*.pem
+*.key
+secrets*.json
