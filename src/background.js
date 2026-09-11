@@ -7,6 +7,7 @@ import { executePlan } from "./retrieval/resource-executor.js";
 import { parseLocally } from "./parsers/bridge.js";
 import { plannerLog, redact } from "./privacy/redact.js";
 
+const CANVAS_ORIGIN = "https://canvas.uva.nl/*";
 const storageReady = initializeStorageSecurity();
 let lastInspector = null;
 let activeRequests = 0;
@@ -39,6 +40,15 @@ function fail(message, status = null) {
   error.safe = true;
   error.status = status;
   throw error;
+}
+
+async function hasCanvasHostAccess() {
+  if (!chrome.permissions?.contains) return true;
+  try {
+    return await chrome.permissions.contains({ origins: [CANVAS_ORIGIN] });
+  } catch {
+    return true;
+  }
 }
 
 export function validateSender(type, sender) {
@@ -88,7 +98,8 @@ export async function handleMessage(message, sender) {
       baseUrl: stored.settings.baseUrl,
       lastConnection: stored.lastConnection,
       inspector: lastInspector,
-      model: GROQ_MODEL
+      model: GROQ_MODEL,
+      canvasHostAccess: await hasCanvasHostAccess()
     } : { configured: Boolean(stored.token) };
   }
   if (message.type === "SAVE_SETTINGS") {
@@ -125,12 +136,16 @@ export async function handleMessage(message, sender) {
     return { model: GROQ_MODEL };
   }
 
+  if (["TEST_CONNECTION", "FETCH_CANVAS_CONTEXT"].includes(message.type) && !(await hasCanvasHostAccess())) {
+    fail("Chrome is blocking Canvas site access. Open Settings, click Test connection, and allow access to canvas.uva.nl.");
+  }
+
   const client = new CanvasClient({ token: stored.token, ...stored.settings });
   if (message.type === "TEST_CONNECTION") {
     const user = await client.getCurrentUser();
     const checkedAt = new Date().toISOString();
     const safeName = redact(user?.name || "Canvas user", [stored.token, stored.apiKey]);
-    await chrome.storage.local.set({ lastConnection: { ok: true, at: checkedAt } });
+    await chrome.storage.local.set({ lastConnection: { ok: true, at: checkedAt, user: { name: safeName } } });
     return { user: { name: safeName }, checkedAt };
   }
   if (message.type !== "FETCH_CANVAS_CONTEXT") fail("Unsupported extension message.");

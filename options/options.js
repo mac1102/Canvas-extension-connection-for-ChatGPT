@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 const booleans = ["includeDescriptions", "includeSubmitted", "currentCoursesOnly", "groqEnabled", "debug"];
 const numbers = ["timeoutMs", "maxContextChars", "maxDocumentBytes", "maxDepth"];
+const CANVAS_ORIGIN = "https://canvas.uva.nl/*";
 
 async function message(type, payload) {
   const response = await chrome.runtime.sendMessage({ type, payload });
@@ -20,6 +21,7 @@ async function load() {
   for (const key of numbers) $(key).value = response.settings[key];
   $("plannerMode").value = response.settings.plannerMode;
   configured(response);
+  return response;
 }
 
 async function save() {
@@ -58,11 +60,26 @@ async function action(work, statusId = "canvasStatus") {
 }
 
 $("save").onclick = () => action(save, "canvasStatus");
-$("test").onclick = () => action(async () => {
-  await save();
-  const r = await message("TEST_CONNECTION");
-  return `Canvas connected as ${r.user?.name || "Canvas user"}.`;
-}, "canvasStatus");
+$("test").onclick = () => {
+  // permissions.request() must be initiated directly by the user gesture. Chrome can
+  // withhold required host permissions via Site access; when that happens background
+  // fetch() fails before Canvas can return an HTTP status.
+  const accessRequest = chrome.permissions.request({ origins: [CANVAS_ORIGIN] });
+  return action(async () => {
+    let granted = false;
+    try {
+      granted = await accessRequest;
+    } catch {
+      granted = await chrome.permissions.contains({ origins: [CANVAS_ORIGIN] });
+    }
+    if (!granted) {
+      throw new Error("Chrome is blocking Canvas site access. Allow canvas.uva.nl for this extension, then test again.");
+    }
+    await save();
+    const r = await message("TEST_CONNECTION");
+    return `Canvas connected as ${r.user?.name || "Canvas user"}.`;
+  }, "canvasStatus");
+};
 $("testGroq").onclick = () => action(async () => {
   await save();
   const r = await message("TEST_GROQ");
@@ -86,6 +103,8 @@ $("toggleToken").onclick = () => {
 };
 
 await action(async () => {
-  await load();
-  return "Settings loaded.";
+  const response = await load();
+  return response.canvasHostAccess === false
+    ? "Chrome site access for canvas.uva.nl is blocked. Click Test connection and allow access."
+    : "Settings loaded.";
 }, "canvasStatus");
