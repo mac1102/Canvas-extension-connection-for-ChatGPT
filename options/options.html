@@ -24,7 +24,6 @@
         <input id="baseUrl" type="url" value="https://canvas.uva.nl" readonly>
         <small>This build intentionally requests host access only to Canvas UvA.</small>
       </label>
-
       <label>
         <span>Canvas access token</span>
         <div class="token-row">
@@ -33,13 +32,12 @@
         </div>
         <small id="tokenState">No token saved yet.</small>
       </label>
-
       <div class="actions">
         <button id="save" class="button primary" type="button">Save settings</button>
         <button id="test" class="button secondary" type="button">Test connection</button>
         <button id="clearToken" class="button danger" type="button">Remove token</button>
       </div>
-      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <div id="canvasStatus" class="status" role="status" aria-live="polite"></div>
     </section>
 
     <section class="card">
@@ -55,8 +53,6 @@
           <select id="timeoutMs">
             <option value="8000">8 seconds</option>
             <option value="15000">15 seconds</option>
-
-
           </select>
         </label>
         <label>
@@ -69,17 +65,14 @@
           </select>
         </label>
       </div>
-
       <label class="check">
         <input id="includeDescriptions" type="checkbox">
         <span><strong>Include assignment and announcement text</strong><small>Needed when you ask ChatGPT to explain instructions or announcements.</small></span>
       </label>
-
       <label class="check">
         <input id="includeSubmitted" type="checkbox">
         <span><strong>Include already-submitted assignments</strong><small>Useful for status/history questions; disable for a tighter pending-work view.</small></span>
       </label>
-
       <label class="check">
         <input id="debug" type="checkbox">
         <span><strong>Debug logging</strong><small>Logs routing metadata to the extension service-worker console. Never logs the access token.</small></span>
@@ -93,8 +86,10 @@
       <label><span>Model</span><input readonly value="openai/gpt-oss-20b"></label>
       <label><span>Planner mode</span><select id="plannerMode"><option value="local">Local only</option><option value="hybrid" selected>Hybrid</option><option value="preferred">AI planner preferred</option></select></label>
       <div class="actions"><button id="testGroq" class="button secondary" type="button">Test Groq connection</button><button id="clearGroq" class="button danger" type="button">Remove Groq key</button></div>
+      <div id="groqStatus" class="status" role="status" aria-live="polite"></div>
       <p>Groq plans retrieval. Groq does not receive raw Canvas course content. When enabled, only your short request and abstract operation names go to Groq. Pasted content, URLs, and detected sensitive queries stay with the local planner. Avoid including private text in your request.</p>
     </section>
+
     <section class="card usage">
       <h2>How to use it</h2>
       <div class="examples">
