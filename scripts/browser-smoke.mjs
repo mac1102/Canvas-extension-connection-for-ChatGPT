@@ -164,28 +164,51 @@ try {
   });
   await context.route("https://chatgpt.com/**", (route) => route.fulfill({
     status: 200, contentType: "text/html", body: String.raw`<!doctype html>
-      <form><textarea id="prompt-textarea"></textarea><button data-testid="send-button" type="button">Send</button></form>
+      <form><div id="prompt-textarea" contenteditable="true" style="min-height:40px"></div><button data-testid="send-button" type="button">Send</button></form>
       <script>
-        window.sent = 0;
-        document.querySelector("button").onclick = () => {
+        window.sent = 0; window.editorState = "";
+        const editor = document.querySelector("#prompt-textarea");
+        editor.addEventListener("input", () => { window.editorState = editor.innerText; });
+        editor.addEventListener("paste", (event) => {
+          event.preventDefault();
+          const next = event.clipboardData.getData("text/plain");
+          editor.replaceChildren(...next.split("\n").map((line) => {
+            const p = document.createElement("p");
+            p.textContent = line;
+            if (!line) p.append(document.createElement("br"));
+            return p;
+          }));
+          // The sender reads editor state, which intentionally lags its DOM.
+          setTimeout(() => { window.editorState = next; }, 180);
+        });
+        const send = () => {
           window.sent++;
-          window.sentText = document.querySelector("textarea").value;
-          document.querySelector("textarea").value = "";
+          window.sentText = window.editorState;
+          editor.replaceChildren();
+          window.editorState = "";
         };
+        document.addEventListener("keydown", (event) => {
+          if (event.target === editor && event.key === "Enter") {
+            event.preventDefault(); event.stopImmediatePropagation(); send();
+          }
+        }, true);
+        document.querySelector("button").onclick = send;
       </script>`
   }));
   const chatgpt = await context.newPage();
   chatgpt.on("pageerror", (error) => errors.push(error.message));
   await chatgpt.goto("https://chatgpt.com/");
-  await chatgpt.locator("textarea").fill("@Canvas fetch what I'm gonna study today");
+  await chatgpt.locator("#prompt-textarea").fill("@Canvas fetch what I'm gonna study today");
   await chatgpt.locator(".canvas-live-hint").waitFor();
-  await chatgpt.locator("textarea").press("Enter");
+  await chatgpt.locator("#prompt-textarea").press("Enter");
   await chatgpt.waitForFunction(() => window.sent === 1);
   const enrichedStudy = await chatgpt.evaluate(() => window.sentText);
   assert.ok(enrichedStudy.includes('"planner":"Groq / openai/gpt-oss-20b"'));
   assert.ok(enrichedStudy.includes('"matches":37'));
   assert.ok(enrichedStudy.includes('"search_terms":[]'));
   assert.ok(enrichedStudy.includes("Data acquisition seminar"));
+  assert.ok(enrichedStudy.includes("<<< END CANVAS LIVE DATA >>>"));
+  assert.equal(await chatgpt.evaluate(() => window.sent), 1);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 1);
   await chatgpt.close();
   await context.unroute("https://chatgpt.com/**");

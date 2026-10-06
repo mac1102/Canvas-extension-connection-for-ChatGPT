@@ -14,7 +14,7 @@ git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the AI planning/runtime fixes are version **0.2.2**. Keep your existing extension folder and use Reload to preserve saved tokens.
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the composer synchronization fixes are version **0.2.3**. Keep your existing extension folder and use Reload to preserve saved tokens.
 
 ## Configure
 
@@ -85,6 +85,7 @@ Selected retrieved Canvas context **is sent to ChatGPT** in your message so Chat
 
 ## Troubleshooting and limitations
 
+- **Fetch succeeds but context is missing:** use version 0.2.3 or newer, Reload the extension, and refresh the ChatGPT tab. The extension waits for the full enriched draft to remain stable before clicking Send. If the editor refuses or removes it, auto-send stops and **Copy Canvas prompt** lets you paste the fetched prompt manually.
 - **Missing runtime / extension context invalidated:** after reloading or updating the extension, refresh every open ChatGPT tab. Existing page scripts may lose extension messaging. Requests preserve the draft and display a refresh instruction rather than an undefined `sendMessage` error.
 - **What am I studying today?** AI planning can select Calendar, modules, syllabus, announcements and reading resources. A study date does not automatically become an assignment deadline filter. If Canvas has no published calendar events or your timetable lives elsewhere, the evidence cannot establish today's classes.
 
@@ -95,7 +96,7 @@ Selected retrieved Canvas context **is sent to ChatGPT** in your message so Chat
 - **PDF:** no OCR, password entry, or visual chart interpretation. Scanned/encrypted/malformed PDFs can return no text. Extraction is capped at 150 pages; text and excerpts may omit later sections. Nonstandard fonts and layouts may extract imperfectly.
 - **Office:** text extraction omits images, embedded objects, macros and formatting. Legacy DOC/PPT/XLS and XLSX are unsupported. ZIP expansion is bounded; corrupt files fail independently.
 - **Matching:** lexical heuristics are not a complete semantic search engine. Courses with missing or ambiguous dates may be omitted or selected incorrectly; naming the course helps. Limits and inaccessible resources can make results partial.
-- **ChatGPT UI changes:** reload the extension and refresh the tab. Multiple composer/send selectors are used. If auto-send does not work, the enriched draft remains ready for manual Send. Edits made during retrieval are preserved.
+- **ChatGPT UI changes:** reload the extension and refresh the tab. Multiple composer/send selectors are used. If no Send button is available, a verified enriched draft remains ready for manual Send. If context insertion fails, use **Copy Canvas prompt**, paste it into the composer, then Send. Edits made during retrieval are preserved.
 - **Long requests:** service-worker restarts or browser closure can interrupt work. No background sync or persistent course cache is used; retry the request.
 
 ## Development and validation

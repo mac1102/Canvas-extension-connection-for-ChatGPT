@@ -82,7 +82,7 @@
 .canvas-live-toast[data-kind="success"] .canvas-live-toast__status { background: #22c55e; }
 .canvas-live-toast[data-kind="error"] .canvas-live-toast__status { background: #ef4444; }
 .canvas-live-toast__message { flex: 1 1 auto; }
-.canvas-live-toast__settings {
+.canvas-live-toast__settings, .canvas-live-toast__copy {
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 7px;
   padding: 5px 8px;
@@ -94,4 +94,20 @@
 @keyframes canvas-live-pulse {
   from { opacity: 0.45; transform: scale(0.88); }
   to { opacity: 1; transform: scale(1.1); }
+}
+
+.canvas-live-toast { flex-wrap: wrap; }
+.canvas-live-toast [hidden] { display: none !important; }
+.canvas-live-toast__draft {
+  flex: 1 1 100%;
+  width: 100%;
+  min-height: 140px;
+  max-height: 40vh;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 7px;
+  padding: 8px;
+  background: #202020;
+  color: inherit;
+  font: inherit;
 }
