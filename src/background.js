@@ -1,4 +1,5 @@
 import { CanvasClient, CanvasApiError } from "./canvas-client.js";
+import { createCanvasFetch } from "./canvas-transport.js";
 import { normalizeText } from "./router.js";
 import { DEFAULT_SETTINGS, sanitizeSettings } from "./settings.js";
 import { planRequest } from "./planner/planner-router.js";
@@ -47,7 +48,7 @@ async function hasCanvasHostAccess() {
   try {
     return await chrome.permissions.contains({ origins: [CANVAS_ORIGIN] });
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -140,13 +141,17 @@ export async function handleMessage(message, sender) {
     fail("Chrome is blocking Canvas site access. Open Settings, click Test connection, and allow access to canvas.uva.nl.");
   }
 
-  const client = new CanvasClient({ token: stored.token, ...stored.settings });
+  const canvasFetch = createCanvasFetch({ timeoutMs: stored.settings.timeoutMs });
+  const client = new CanvasClient({ token: stored.token, ...stored.settings, fetchImpl: canvasFetch });
   if (message.type === "TEST_CONNECTION") {
     const user = await client.getCurrentUser();
+    if (!user || typeof user.name !== "string" || !user.name.trim()) {
+      fail("Canvas returned an invalid user response. Check your access token and test again.");
+    }
     const checkedAt = new Date().toISOString();
     const safeName = redact(user?.name || "Canvas user", [stored.token, stored.apiKey]);
-    await chrome.storage.local.set({ lastConnection: { ok: true, at: checkedAt, user: { name: safeName } } });
-    return { user: { name: safeName }, checkedAt };
+    await chrome.storage.local.set({ lastConnection: { ok: true, at: checkedAt, transport: canvasFetch.transport, user: { name: safeName } } });
+    return { user: { name: safeName }, checkedAt, transport: canvasFetch.transport };
   }
   if (message.type !== "FETCH_CANVAS_CONTEXT") fail("Unsupported extension message.");
 
