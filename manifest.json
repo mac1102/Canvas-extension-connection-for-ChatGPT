@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Live for ChatGPT",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Fetch fresh Canvas LMS context when you invoke @Canvas in ChatGPT.",
   "minimum_chrome_version": "140",
   "permissions": [
@@ -30,7 +30,7 @@
       "css": [
         "src/content.css"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "action": {

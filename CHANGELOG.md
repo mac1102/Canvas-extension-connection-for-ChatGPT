@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 — 2026-10-06
+
+- Intercept Enter, Send pointer/click and form submission at window capture from document start, before the page can send an unmodified Canvas request.
+- Insert rich-editor context through paste/native editing instead of a DOM-only replacement; wait for the full enriched draft to remain stable before auto-send.
+- Preserve drafts when insertion is rejected or rolled back. Show a Copy Canvas prompt recovery action; never auto-send an unverified draft.
+- Add Chromium regressions for delayed controlled-editor state, earlier page capture handlers, paste-only rich editors, rollback/rejection, form and pointer sends, and copy recovery.
+
 ## 0.2.2 — 2026-10-06
 
 - GPT-OSS is the primary planner for every eligible request when enabled; local planning is fallback or explicit Local only mode.
