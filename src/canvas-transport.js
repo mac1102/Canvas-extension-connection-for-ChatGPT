@@ -83,12 +83,19 @@ export async function fetchCanvasInTab({ url, authorization, deadline, maxBytes 
 }
 
 function abortable(work, signal) {
-  if (!signal) return work;
+  if (!signal) return work();
   if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
   return new Promise((resolve, reject) => {
     const abort = () => reject(new DOMException("Aborted", "AbortError"));
     signal.addEventListener("abort", abort, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+    // Attach handlers before starting work: tab lookup can abort synchronously.
+    Promise.resolve().then(() => {
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      return work();
+    }).then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); }
+    );
   });
 }
 
@@ -156,11 +163,11 @@ export function createCanvasFetch({ fetchImpl = fetch, chromeApi = globalThis.ch
       Object.defineProperty(response, "url", { value: result.url });
       return response;
     };
-    if (eligible && tabId !== null) return abortable(readInTab(), init.signal);
+    if (eligible && tabId !== null) return abortable(readInTab, init.signal);
     try { return await fetchImpl(input, init); } catch (error) {
       // HTTP 401/403, timeouts and application errors never switch authentication.
       if (!eligible || error?.name !== "TypeError" || init.signal?.aborted) throw error;
-      return abortable(readInTab(), init.signal);
+      return abortable(readInTab, init.signal);
     }
   };
   Object.defineProperty(transport, "transport", { get: () => tabId === null ? "direct" : "canvas-tab" });
