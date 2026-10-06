@@ -13,6 +13,8 @@ export function sanitizeSettings(input = {}) {
     ["maxDocumentBytes", 1048576, 16777216], ["maxDepth", 0, 3], ["maxResources", 1, 50]]) {
     if (Number.isFinite(Number(input[key]))) result[key] = Math.round(Math.max(min, Math.min(max, Number(input[key]))));
   }
-  if (["local", "hybrid", "preferred"].includes(input.plannerMode)) result.plannerMode = input.plannerMode;
+  if (input.plannerMode === "local") result.plannerMode = "local";
+  // Older AI-preferred settings migrate to the AI-first mode.
+  if (["hybrid", "preferred"].includes(input.plannerMode)) result.plannerMode = "hybrid";
   return result;
 }

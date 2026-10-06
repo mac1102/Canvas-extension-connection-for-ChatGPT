@@ -10,9 +10,9 @@ import { QUERY } from "./fixtures/canvas.mjs";
 const good = () => deterministicPlan(QUERY).plan;
 const response = (plan) => new Response(JSON.stringify({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(plan) } }] }));
 for (const query of ["@Canvas deadline tuần này", "@Canvas CONNECTIONS assignments", "@Canvas điểm hiện tại", "@Canvas announcements", "@Canvas CONNECTIONS assigments"]) {
-  test(`simple query stays local: ${query}`, async () => {
+  test(`explicit local mode avoids AI: ${query}`, async () => {
     let calls = 0;
-    const result = await planRequest(query, { ...DEFAULT_SETTINGS, groqEnabled: true }, { apiKey: "fake" }, { fetchImpl: () => { calls++; } });
+    const result = await planRequest(query, { ...DEFAULT_SETTINGS, groqEnabled: true, plannerMode: "local" }, { apiKey: "fake" }, { fetchImpl: () => { calls++; } });
     assert.equal(calls, 0); assert.equal(result.meta.planner, "local"); validatePlan(result.plan);
   });
 }
@@ -64,4 +64,38 @@ test("timeout and persistent invalid JSON fall back", async () => {
 test("privacy rejection falls back with zero HTTP calls", async () => {
   const r = await planRequest(QUERY + " description: PRIVATE", { ...DEFAULT_SETTINGS, groqEnabled: true }, { apiKey: "fake" }, { fetchImpl: () => assert.fail("privacy leak") });
   assert.equal(r.meta.fallback, "privacy firewall");
+});
+
+test("enabled AI decides even simple requests without keyword operations being merged back", async () => {
+  let calls = 0;
+  const ai = deterministicPlan("@Canvas announcements").plan;
+  ai.assignment_filters.time_window = null;
+  const result = await planRequest("@Canvas fetch what I'm gonna study today",
+    { ...DEFAULT_SETTINGS, groqEnabled: true }, { apiKey: "fake" }, {
+      fetchImpl: async () => { calls++; return response(ai); }
+    });
+  assert.equal(calls, 1);
+  assert.equal(result.meta.planner, "Groq / openai/gpt-oss-20b");
+  assert.deepEqual(result.plan, ai);
+  assert.deepEqual(result.plan.operations.map((op) => op.type), ["get_announcements"]);
+  assert.equal(result.plan.assignment_filters.time_window, null);
+});
+test("study fallback fetches calendar and learning context without treating today as a deadline", () => {
+  const { plan } = deterministicPlan("@Canvas fetch what I'm gonna study today");
+  validatePlan(plan);
+  assert.equal(plan.assignment_filters.time_window, null);
+  for (const type of ["get_calendar_events", "list_modules", "get_page", "get_syllabus"]) {
+    assert.ok(plan.operations.some((op) => op.type === type));
+  }
+  assert.equal(plan.operations.find((op) => op.type === "get_calendar_events").query, "today");
+});
+test("simple enabled requests also use GPT-OSS", async () => {
+  for (const query of ["@Canvas deadlines today", "@Canvas CONNECTIONS assignments"]) {
+    let calls = 0;
+    const ai = deterministicPlan(query).plan;
+    const result = await planRequest(query, { ...DEFAULT_SETTINGS, groqEnabled: true }, { apiKey: "fake" },
+      { fetchImpl: async () => { calls++; return response(ai); } });
+    assert.equal(calls, 1);
+    assert.equal(result.meta.planner, "Groq / openai/gpt-oss-20b");
+  }
 });

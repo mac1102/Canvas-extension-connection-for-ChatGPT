@@ -167,6 +167,7 @@ export async function handleMessage(message, sender) {
     const result = await executePlan({
       query,
       plan: planning.plan,
+      planner: planning.meta.planner,
       client,
       settings: stored.settings,
       parseDocument: parseLocally,

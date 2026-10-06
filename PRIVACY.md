@@ -8,7 +8,7 @@ Canvas tokens stay in local trusted extension storage, apart from transmission t
 
 ## Chrome extension → Groq planner
 
-Groq is disabled initially. With it enabled, Hybrid uses local planning for simple queries and considers Groq for complex or ambiguous queries. Local only sends no planner requests; AI planner preferred attempts eligible requests using Groq.
+Groq is disabled initially. With it enabled in AI planner with local fallback mode, every eligible user query is sent to GPT-OSS for resource planning, including simple queries. Local only sends no planner requests. Saved Hybrid and AI-preferred modes migrate to this AI-first behavior. The query privacy guard remains in place, and errors or blocked queries fall back locally.
 
 The only planning payload inputs are a short natural-language user query and a fixed list of abstract operation names. A fixed system instruction and JSON Schema describe the retrieval plan. Planning happens before any Canvas content retrieval. The payload builder rejects extra fields, raw objects, multiline/pasted text, markup, URLs, known keys and detected identifiers. There is no second metadata/content planning stage.
 

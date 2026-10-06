@@ -1,7 +1,7 @@
 export const OPERATIONS = Object.freeze([
   "list_assignments", "get_assignment", "get_rubric", "list_modules", "get_page",
   "list_files", "get_file", "get_syllabus", "get_announcements", "get_grades",
-  "get_todo", "get_submissions", "list_folders", "get_assignment_groups", "get_user"
+  "get_todo", "get_submissions", "list_folders", "get_assignment_groups", "get_user", "get_calendar_events"
 ]);
 const string = { type: "string", maxLength: 200 };
 const strings = { type: "array", items: string, maxItems: 8 };

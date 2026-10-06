@@ -1,6 +1,29 @@
 (() => {
   const MENTION_RE = /@canvas\b/i;
   const PARTIAL_MENTION_RE = /(?:^|\s)@(?:c|ca|can|canv|canva|canvas)$/i;
+  const RUNTIME_RESET = "Canvas extension was reloaded or updated. Refresh this ChatGPT tab, then send your @Canvas request again.";
+  function runtimeAvailable() {
+    try {
+      const runtime = globalThis.chrome?.runtime;
+      return Boolean(runtime?.id) && typeof runtime.sendMessage === "function";
+    } catch { return false; }
+  }
+  async function sendRuntimeMessage(message) {
+    if (!runtimeAvailable()) throw new Error(RUNTIME_RESET);
+    try {
+      return await globalThis.chrome.runtime.sendMessage(message);
+    } catch (error) {
+      const detail = String(error?.message || "");
+      if (!runtimeAvailable() || /extension context invalidated/i.test(detail)) {
+        throw new Error(RUNTIME_RESET);
+      }
+      if (/could not establish connection|receiving end does not exist|message (?:port|channel) (?:was )?closed/i.test(detail)) {
+        throw new Error("Could not contact the Canvas extension. Reload it in chrome://extensions, refresh this ChatGPT tab, and try again.");
+      }
+      throw error;
+    }
+  }
+
   const state = {
     processing: false,
     bypassOnce: false,
@@ -82,7 +105,7 @@
     showToast("Fetching fresh Canvas data…", "loading");
 
     try {
-      const response = await chrome.runtime.sendMessage({
+      const response = await sendRuntimeMessage({
         type: "FETCH_CANVAS_CONTEXT",
         query: originalText
       });
@@ -110,7 +133,7 @@
     } catch (error) {
       if (composer.isConnected && getComposerText(composer) === originalText) setComposerText(composer, originalText);
       state.armedText = null;
-      showToast(error?.message || "Could not fetch Canvas.", "error", 7000, true);
+      showToast(error?.message || "Could not fetch Canvas.", "error", 12000, runtimeAvailable());
     } finally {
       state.processing = false;
       refreshHint();
@@ -191,9 +214,9 @@
       toast.innerHTML = '<div class="canvas-live-toast__status"></div><div class="canvas-live-toast__message"></div><button class="canvas-live-toast__settings" type="button">Settings</button>';
       toast.querySelector(".canvas-live-toast__settings").addEventListener("click", async () => {
         try {
-          await chrome.runtime.sendMessage({ type: "OPEN_OPTIONS" });
+          await sendRuntimeMessage({ type: "OPEN_OPTIONS" });
         } catch (error) {
-          console.warn("Canvas Live: could not open extension settings", error);
+          showToast(error?.message || "Could not open Canvas Settings.", "error", 12000);
         }
       });
       document.body.appendChild(toast);

@@ -84,10 +84,10 @@
       <label class="check"><input id="groqEnabled" type="checkbox"><span>Enable Groq planner</span></label>
       <label><span>Groq API key</span><input id="groqKey" type="password" autocomplete="off" spellcheck="false" placeholder="Paste a new key"><small id="groqState"></small></label>
       <label><span>Model</span><input readonly value="openai/gpt-oss-20b"></label>
-      <label><span>Planner mode</span><select id="plannerMode"><option value="local">Local only</option><option value="hybrid" selected>Hybrid</option><option value="preferred">AI planner preferred</option></select></label>
+      <label><span>Planner mode</span><select id="plannerMode"><option value="local">Local only</option><option value="hybrid" selected>AI planner with local fallback</option></select></label>
       <div class="actions"><button id="testGroq" class="button secondary" type="button">Test Groq connection</button><button id="clearGroq" class="button danger" type="button">Remove Groq key</button></div>
       <div id="groqStatus" class="status" role="status" aria-live="polite"></div>
-      <p>Groq plans retrieval. Groq does not receive raw Canvas course content. When enabled, only your short request and abstract operation names go to Groq. Pasted content, URLs, and detected sensitive queries stay with the local planner. Avoid including private text in your request.</p>
+      <p>Groq plans retrieval. Groq does not receive raw Canvas course content. When enabled, GPT-OSS decides which resources to fetch for every eligible request. The local planner is used if AI planning fails. Only your short request and abstract operation names go to Groq. Pasted content, URLs, and detected sensitive queries stay with the local planner. Avoid including private text in your request.</p>
     </section>
 
     <section class="card usage">

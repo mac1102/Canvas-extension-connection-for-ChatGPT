@@ -356,3 +356,10 @@ export function resourceMatchesSearchTerms(label, terms) {
     )
   );
 }
+
+export function isStudyRequest(query) {
+  const q = normalizeText(query);
+  return /\b(study|studying|learn|learning|classes|lectures|seminars|timetable|schedule|hoc)\b/.test(q) &&
+    /\b(today|tomorrow|this week|next week|hom nay|ngay mai|tuan nay|tuan sau)\b/.test(q) &&
+    !/\b(study guide|case study)\b/.test(q);
+}

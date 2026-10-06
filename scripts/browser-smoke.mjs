@@ -132,6 +132,64 @@ try {
     assert.ok(parsed?.context?.includes(expected), `${filename}: ${JSON.stringify(parsed)}`);
   }
 
+  // Exercise the real manifest content script -> worker -> GPT-OSS plan -> Canvas
+  // path for the user's prompt, rather than mocking runtime.sendMessage in the page.
+  await worker.evaluate(() => {
+    globalThis.studyPlannerCalls = 0;
+    globalThis.fetch = async (input) => {
+      const url = new URL(input);
+      const json = (value) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+      if (url.hostname === "api.groq.com") {
+        globalThis.studyPlannerCalls++;
+        const plan = {
+          version: 1, course_scope: { mode: "current", queries: [] },
+          operations: [
+            { type: "list_assignments", query: null, resource_ids: [], required: true },
+            { type: "get_calendar_events", query: "today", resource_ids: [], required: false }
+          ],
+          assignment_filters: { search_terms: [], time_window: null, submission_state: null, individual: false },
+          resource_queries: [], follow_links: false, max_depth: 2, max_resources: 30, needs_count: false
+        };
+        return json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(plan) } }] });
+      }
+      if (url.pathname === "/api/v1/courses") return json([{ id: 1, name: "CONNECTIONS" }]);
+      if (url.pathname === "/api/v1/courses/1/assignments") return json(
+        Array.from({ length: 37 }, (_, i) => ({ id: i + 1, name: "Weekly Goal " + i, due_at: null })));
+      if (url.pathname === "/api/v1/calendar_events") return json([
+        { id: 10, title: "Data acquisition seminar", context_code: "course_1",
+          start_at: new Date().toISOString(), end_at: new Date().toISOString(), location_name: "Room A" }
+      ]);
+      return json([]);
+    };
+  });
+  await context.route("https://chatgpt.com/**", (route) => route.fulfill({
+    status: 200, contentType: "text/html", body: String.raw`<!doctype html>
+      <form><textarea id="prompt-textarea"></textarea><button data-testid="send-button" type="button">Send</button></form>
+      <script>
+        window.sent = 0;
+        document.querySelector("button").onclick = () => {
+          window.sent++;
+          window.sentText = document.querySelector("textarea").value;
+          document.querySelector("textarea").value = "";
+        };
+      </script>`
+  }));
+  const chatgpt = await context.newPage();
+  chatgpt.on("pageerror", (error) => errors.push(error.message));
+  await chatgpt.goto("https://chatgpt.com/");
+  await chatgpt.locator("textarea").fill("@Canvas fetch what I'm gonna study today");
+  await chatgpt.locator(".canvas-live-hint").waitFor();
+  await chatgpt.locator("textarea").press("Enter");
+  await chatgpt.waitForFunction(() => window.sent === 1);
+  const enrichedStudy = await chatgpt.evaluate(() => window.sentText);
+  assert.ok(enrichedStudy.includes('"planner":"Groq / openai/gpt-oss-20b"'));
+  assert.ok(enrichedStudy.includes('"matches":37'));
+  assert.ok(enrichedStudy.includes('"search_terms":[]'));
+  assert.ok(enrichedStudy.includes("Data acquisition seminar"));
+  assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 1);
+  await chatgpt.close();
+  await context.unroute("https://chatgpt.com/**");
+
   await page.locator("#clearGroq").click();
   await page.locator("#groqStatus").filter({ hasText: "Groq key removed" }).waitFor();
   assert.equal((await worker.evaluate(() => chrome.storage.local.get("groqKey"))).groqKey, undefined);
@@ -155,7 +213,7 @@ try {
     await composer.close();
   }
 
-  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
+  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, real ChatGPT-to-GPT-OSS study retrieval, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
 } finally {
   await context.close();
 }

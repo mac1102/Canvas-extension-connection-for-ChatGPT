@@ -241,6 +241,22 @@ export class CanvasClient {
   getFolderFolders(f) { return this.getAll(`/api/v1/folders/${id(f)}/folders`); }
   getEnrollments() { return this.getAll("/api/v1/users/self/enrollments", { "type[]": ["StudentEnrollment"], "state[]": ["active", "completed"] }); }
   getTodo() { return this.getAll("/api/v1/users/self/todo"); }
+  async getCalendarEvents(ids, { startDate, endDate }) {
+    const contexts = [...new Set(ids.map((c) => "course_" + id(c)))];
+    const output = [];
+    output.complete = true;
+    // Canvas accepts at most ten context codes in a calendar request.
+    for (let offset = 0; offset < contexts.length; offset += 10) {
+      const events = await this.getAll("/api/v1/calendar_events", {
+        type: "event", start_date: startDate.toISOString(), end_date: endDate.toISOString(),
+        "context_codes[]": contexts.slice(offset, offset + 10),
+        "excludes[]": ["child_events"]
+      });
+      output.push(...events);
+      output.complete &&= events.complete !== false;
+    }
+    return output;
+  }
   getAnnouncements(ids, { startDate = new Date(Date.now() - 30 * 86400000), endDate = new Date() } = {}) {
     return ids.length ? this.getAll("/api/v1/announcements", {
       "context_codes[]": ids.map((c) => `course_${id(c)}`),
