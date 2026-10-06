@@ -1,9 +1,12 @@
-import { detectIntent, normalizeText, parseTimeWindow } from "../router.js";
+import { detectIntent, normalizeText, parseTimeWindow, isStudyRequest } from "../router.js";
 export function deterministicPlan(query) {
   const q = normalizeText(query), intents = detectIntent(query);
   const types = new Set();
   const add = (...items) => items.forEach((item) => types.add(item));
+  const study = isStudyRequest(query);
+  const explicitDeadline = /deadline|\bdue\b|overdue|den han|qua han/.test(q);
   const reading = /can doc|need to read|reading|lien quan|related|linked/.test(q);
+  if (study) add("get_calendar_events", "list_modules", "get_page", "get_syllabus", "get_announcements", "list_assignments", "get_todo");
   const detail = intents.includes("assignmentDetail");
   const manual = /manual|handbook|syllabus|course guide|study guide|reader/.test(q);
   if (intents.includes("assignments") || detail || reading) add("list_assignments");
@@ -20,11 +23,11 @@ export function deterministicPlan(query) {
   if (!types.size) add("get_todo");
   const needsCount = /bao nhieu|how many|count|total/.test(q);
   if (needsCount && types.has("list_assignments")) add("list_assignments");
-  const time = (intents.includes("deadlines") || /tuan sau|next week|(?:next|trong) \d{1,2} (?:days?|ngay)/.test(q)) ? (/overdue|qua han/.test(q) ? "overdue" : parseTimeWindow(query).label) : null;
+  const time = (!study || explicitDeadline) && (intents.includes("deadlines") || /tuan sau|next week|(?:next|trong) \d{1,2} (?:days?|ngay)/.test(q)) ? (/overdue|qua han/.test(q) ? "overdue" : parseTimeWindow(query).label) : null;
   if (time) { types.delete("get_todo"); add("list_assignments"); }
   const plan = {
     version: 1, course_scope: { mode: /all courses|historical|old courses|cac mon cu/.test(q) ? "all" : "current", queries: [] },
-    operations: [...types].map((type) => ({ type, query: null, resource_ids: [], required: ["list_assignments", "get_todo"].includes(type) })),
+    operations: [...types].map((type) => ({ type, query: type === "get_calendar_events" ? parseTimeWindow(query).label : null, resource_ids: [], required: ["list_assignments", "get_todo"].includes(type) })),
     assignment_filters: { search_terms: [], time_window: time?.startsWith("next 14") ? "upcoming" : time,
       submission_state: /unsubmitted|chua nop|pending/.test(q) ? "unsubmitted" : /submitted|da nop/.test(q) ? "submitted" : null,
       individual: /individual|ca nhan|solo/.test(q) },

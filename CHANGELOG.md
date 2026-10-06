@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-10-06
+
+- GPT-OSS is the primary planner for every eligible request when enabled; local planning is fallback or explicit Local only mode.
+- Respect AI-selected operations and assignment filters, including empty filters, without adding conversational keywords back into title searches.
+- Add bounded course Calendar GETs so study/schedule queries can retrieve times, topics, locations and linked readings; distinguish missing calendar evidence from assignment deadlines.
+- Handle missing/invalidated extension messaging after Reload, preserve drafts, and explain how to refresh the ChatGPT tab.
+- Add regression coverage for the reported 37-assignments/zero-matches query, calendar scope/batching/failures, AI plan ownership and runtime recovery.
+
 ## 0.2.1 — 2026-10-06
 
 - Recover service-worker API network failures through an existing Canvas tab in Chrome's isolated world, using the same bearer token and no session cookies.

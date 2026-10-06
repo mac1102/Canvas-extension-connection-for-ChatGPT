@@ -14,14 +14,14 @@ git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; this HTTPS fix is version **0.2.1**. Keep your existing extension folder and use Reload to preserve saved tokens.
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the AI planning/runtime fixes are version **0.2.2**. Keep your existing extension folder and use Reload to preserve saved tokens.
 
 ## Configure
 
 1. In Canvas, open **Account → Settings → Approved Integrations → New Access Token**. Give it a descriptive name and an expiry. Your institution may restrict token creation.
 2. Open the extension's **Settings**, paste the Canvas token, save, then **Test connection**. This build deliberately supports only `https://canvas.uva.nl`. If direct HTTPS access fails, open Canvas in the same Chrome profile, sign in, keep that tab open, and test again. The extension can then make the same bearer-authenticated API requests in an isolated environment inside that tab.
 3. Optionally create a key in the [Groq console](https://console.groq.com/keys), paste it into **Groq AI Planner**, enable the planner, save, and **Test Groq connection**. The model is fixed to `openai/gpt-oss-20b`.
-4. Leave mode at **Hybrid**: simple requests stay local; ambiguous, relationship and multi-intent requests may use Groq. **Local only** disables planner network calls; **AI planner preferred** tries Groq for each eligible request. Groq is disabled until you explicitly enable it.
+4. Choose **AI planner with local fallback** and enable Groq. GPT-OSS decides resources and filters for every eligible request, including simple requests. The local planner is used if AI planning is unavailable, invalid, or blocked by the query privacy guard. **Local only** disables planner network calls. Previously saved Hybrid/AI-preferred modes both migrate to this AI-first behavior. Groq is disabled until you explicitly enable it.
 
 Saved keys are never displayed or returned to the content script. Blank fields preserve existing keys. Each key has a separate removal button. A connection test saves entered settings first; the Groq test sends only a synthetic assignment-list request.
 
@@ -37,6 +37,7 @@ Saved keys are never displayed or returned to the content script. Blank fields p
 @Canvas course manual CONNECTIONS nói gì về grading?
 @Canvas xem tôi cần đọc gì để làm bài tuần sau
 @Canvas HISTORY assignments
+@Canvas fetch what I'm gonna study today
 ```
 
 Explicit course names override current-course filtering, including historical courses. Broad queries prefer course dates, academic year, semester and activity signals. Counts describe the selected course scope, before assignment filters; partial inventories are explicitly marked. Individual work requires evidence in the assignment title or description; a missing group ID alone is not proof.
@@ -44,16 +45,16 @@ Explicit course names override current-course filtering, including historical co
 ## How it works
 
 ```text
-ChatGPT composer → request validation → deterministic plan + confidence
-                                      ↘ optional Groq structured plan
-                        validated RetrievalPlan
+ChatGPT composer → request validation → GPT-OSS structured retrieval plan
+                                      ↘ local fallback if unavailable
+                        validated operations and filters
                                   ↓
-Canvas metadata → local resource graph → ranked, bounded retrieval
+Canvas API → course calendar and metadata → bounded linked-resource retrieval
                                   ↓
 local document workers → ranked excerpts → JSON context budget → composer
 ```
 
-The service worker stores credentials and controls retrieval. If its direct API fetch fails with a browser network error, it can dispatch a bounded GET to a top-frame Canvas tab using Chrome's isolated world. That temporary request uses the same saved bearer token, omits browser cookies, and never runs in the page's JavaScript world. It does not switch to the logged-in session or bypass token errors. After recovery, remaining API calls in that retrieval use the working tab; file downloads remain in the service worker. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
+The service worker stores credentials and controls retrieval. If its direct API fetch fails with a browser network error, it can dispatch a bounded GET to a top-frame Canvas tab using Chrome's isolated world. That temporary request uses the same saved bearer token, omits browser cookies, and never runs in the page's JavaScript world. It does not switch to the logged-in session or bypass token errors. After recovery, remaining API calls in that retrieval use the working tab; file downloads remain in the service worker. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. A validated AI plan controls the operations and filters without keyword operations being merged back in. An empty AI assignment-title filter remains empty. Routing context and the popup inspector identify the planner used. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
 
 Assignment inventory and details run together when needed. Descriptions can lead to Canvas pages and files; cycles and duplicate resources are suppressed. Generic discovery ranks file/page/module metadata before downloading up to six candidates. Directly linked resources take priority. A request-local cache prevents duplicate GETs and is discarded after the request.
 
@@ -61,7 +62,7 @@ Document parsing happens in a local offscreen document's workers. PDF.js, ZIP ex
 
 ## Supported resources and formats
 
-- Current user; courses and course details; syllabus.
+- Current user; courses and course details; syllabus; course calendar events with times, locations and descriptions. Calendar contexts are batched in groups of ten.
 - Assignments, details, assignment groups, rubrics where accessible, and your submission status/score.
 - Announcements, enrollment grades, todo, modules and module items, pages and page bodies, files and folders.
 - PDF text, DOCX paragraphs, PPTX slides/notes, TXT, Markdown, HTML, CSV, JSON and XML.
@@ -83,6 +84,9 @@ With Groq enabled, a short user-written query and abstract operation names may g
 Selected retrieved Canvas context **is sent to ChatGPT** in your message so ChatGPT can answer. This is not an entirely local data flow. See [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
 ## Troubleshooting and limitations
+
+- **Missing runtime / extension context invalidated:** after reloading or updating the extension, refresh every open ChatGPT tab. Existing page scripts may lose extension messaging. Requests preserve the draft and display a refresh instruction rather than an undefined `sendMessage` error.
+- **What am I studying today?** AI planning can select Calendar, modules, syllabus, announcements and reading resources. A study date does not automatically become an assignment deadline filter. If Canvas has no published calendar events or your timetable lives elsewhere, the evidence cannot establish today's classes.
 
 - **HTTPS/network failure:** use version 0.2.1 or newer, allow Canvas site access, and keep a Canvas tab open in the same Chrome profile. A recovered connection says **using the Canvas tab**. If both request paths fail, check that Canvas opens normally and check your VPN/proxy/network. An API redirect to login requires a valid token; the fallback never uses session cookies.
 - **401:** replace an expired or revoked Canvas token. **403/404:** the resource may be locked, unpublished, unavailable or outside your permissions; other resources can still succeed.
