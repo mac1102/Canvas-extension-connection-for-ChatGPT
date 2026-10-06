@@ -172,7 +172,7 @@ export class CanvasClient {
       } catch (error) {
         if (!(error instanceof CanvasApiError) && error.name !== "AbortError" && attempt === 0) continue;
         if (error instanceof CanvasApiError) throw error;
-        throw new CanvasApiError(error.name === "AbortError" ? "Canvas request timed out." : "Could not reach Canvas over HTTPS.");
+        throw new CanvasApiError(error.name === "AbortError" ? "Canvas request timed out." : "Canvas HTTPS request failed. Open canvas.uva.nl in Chrome and test again. Check extension site access and your network if it still fails.");
       } finally {
         clearTimeout(timer);
       }

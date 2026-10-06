@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const booleans = ["includeDescriptions", "includeSubmitted", "currentCoursesOnly", "groqEnabled", "debug"];
 const numbers = ["timeoutMs", "maxContextChars", "maxDocumentBytes", "maxDepth"];
 const CANVAS_ORIGIN = "https://canvas.uva.nl/*";
+const VERSION = chrome.runtime.getManifest().version;
 
 async function message(type, payload) {
   const response = await chrome.runtime.sendMessage({ type, payload });
@@ -10,7 +11,7 @@ async function message(type, payload) {
 }
 
 function configured(response) {
-  $("connectionBadge").textContent = response.configured ? "Canvas token saved" : "Canvas not configured";
+  $("connectionBadge").textContent = response.configured ? `Canvas token saved · v${VERSION}` : `Canvas not configured · v${VERSION}`;
   $("tokenState").textContent = response.configured ? "Token saved. Leave blank to keep it." : "No Canvas token saved.";
   $("groqState").textContent = response.groqConfigured ? "Groq key saved. Leave blank to keep it." : "No Groq key saved. Local planning remains available.";
 }
@@ -77,7 +78,7 @@ $("test").onclick = () => {
     }
     await save();
     const r = await message("TEST_CONNECTION");
-    return `Canvas connected as ${r.user?.name || "Canvas user"}.`;
+    return `Canvas connected as ${r.user?.name || "Canvas user"}${r.transport === "canvas-tab" ? " using the Canvas tab" : ""}.`;
   }, "canvasStatus");
 };
 $("testGroq").onclick = () => action(async () => {

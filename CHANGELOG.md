@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 2026-10-06
+
+- Recover service-worker API network failures through an existing Canvas tab in Chrome's isolated world, using the same bearer token and no session cookies.
+- Keep token errors, timeouts, redirects, response-size limits and tab navigation bounded; report actionable connection errors.
+- Show installed version and successful transport in Settings.
+- Add unit coverage and a real Chromium reproduction for worker-only HTTPS failure, token isolation, cookie omission and missing-tab recovery.
+
 ## 0.2.0 — 2026-09-11
 
 - Optional Groq hybrid planner using openai/gpt-oss-20b, strict structured plans, bounded validation retry and deterministic fallback.

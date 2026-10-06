@@ -72,6 +72,44 @@ try {
   await page.locator("#testGroq").click();
   await page.locator("#groqStatus").filter({ hasText: "Groq rejected the API key (HTTP 401)" }).waitFor();
 
+  // Reproduce a worker-only network failure, then exercise real isolated-world
+  // same-origin fetch in a Canvas tab. The page's fetch must never see the token.
+  const tabRequests = [];
+  await context.addCookies([{ name: "fixture_session", value: "must-not-be-used",
+    domain: "canvas.uva.nl", path: "/", secure: true }]);
+  await context.route("https://canvas.uva.nl/**", async (route) => {
+    const request = route.request();
+    if (new URL(request.url()).pathname.startsWith("/api/v1/")) {
+      tabRequests.push(request.headers());
+      await route.fulfill({ status: 200, contentType: "application/json",
+        body: JSON.stringify({ name: "Isolated Canvas User" }) });
+    } else {
+      await route.fulfill({ status: 200, contentType: "text/html",
+        body: "<!doctype html><title>Canvas fixture</title><p>Canvas</p>" });
+    }
+  });
+  const canvasTab = await context.newPage();
+  await canvasTab.goto("https://canvas.uva.nl/");
+  await canvasTab.evaluate(() => {
+    window.pageFetchCalls = 0;
+    window.fetch = () => { window.pageFetchCalls++; throw new Error("Page-world fetch must not receive credentials"); };
+  });
+  await worker.evaluate(() => {
+    globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); };
+  });
+  await page.locator("#test").click();
+  await page.locator("#canvasStatus").filter({ hasText: "Canvas connected as Isolated Canvas User using the Canvas tab" }).waitFor();
+  assert.equal(tabRequests.length, 1);
+  assert.equal(tabRequests[0].authorization, "Bearer fixture-canvas-token");
+  assert.equal(tabRequests[0].cookie, undefined);
+  assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
+  const connection = await worker.evaluate(() => chrome.storage.local.get("lastConnection"));
+  assert.equal(connection.lastConnection.transport, "canvas-tab");
+  await canvasTab.close();
+  await context.unroute("https://canvas.uva.nl/**");
+  await page.locator("#test").click();
+  await page.locator("#canvasStatus").filter({ hasText: "Direct Canvas HTTPS access failed. Open https://canvas.uva.nl" }).waitFor();
+
   for (const [filename, bytes, expected] of [
     ["Manual.pdf", pdfBytes(), "40 percent"],
     ["Requirements.docx", zipSync({ "word/document.xml": strToU8('<w:document xmlns:w="w"><w:t>Individual evidence</w:t></w:document>') }), "Individual evidence"],
@@ -117,7 +155,7 @@ try {
     await composer.close();
   }
 
-  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
+  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
 } finally {
   await context.close();
 }

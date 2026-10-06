@@ -14,12 +14,12 @@ git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept the new Groq host permission.
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; this HTTPS fix is version **0.2.1**. Keep your existing extension folder and use Reload to preserve saved tokens.
 
 ## Configure
 
 1. In Canvas, open **Account → Settings → Approved Integrations → New Access Token**. Give it a descriptive name and an expiry. Your institution may restrict token creation.
-2. Open the extension's **Settings**, paste the Canvas token, save, then **Test connection**. This build deliberately supports only `https://canvas.uva.nl`.
+2. Open the extension's **Settings**, paste the Canvas token, save, then **Test connection**. This build deliberately supports only `https://canvas.uva.nl`. If direct HTTPS access fails, open Canvas in the same Chrome profile, sign in, keep that tab open, and test again. The extension can then make the same bearer-authenticated API requests in an isolated environment inside that tab.
 3. Optionally create a key in the [Groq console](https://console.groq.com/keys), paste it into **Groq AI Planner**, enable the planner, save, and **Test Groq connection**. The model is fixed to `openai/gpt-oss-20b`.
 4. Leave mode at **Hybrid**: simple requests stay local; ambiguous, relationship and multi-intent requests may use Groq. **Local only** disables planner network calls; **AI planner preferred** tries Groq for each eligible request. Groq is disabled until you explicitly enable it.
 
@@ -53,7 +53,7 @@ Canvas metadata → local resource graph → ranked, bounded retrieval
 local document workers → ranked excerpts → JSON context budget → composer
 ```
 
-The service worker is the only executor and credential holder. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
+The service worker stores credentials and controls retrieval. If its direct API fetch fails with a browser network error, it can dispatch a bounded GET to a top-frame Canvas tab using Chrome's isolated world. That temporary request uses the same saved bearer token, omits browser cookies, and never runs in the page's JavaScript world. It does not switch to the logged-in session or bypass token errors. After recovery, remaining API calls in that retrieval use the working tab; file downloads remain in the service worker. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
 
 Assignment inventory and details run together when needed. Descriptions can lead to Canvas pages and files; cycles and duplicate resources are suppressed. Generic discovery ranks file/page/module metadata before downloading up to six candidates. Directly linked resources take priority. A request-local cache prevents duplicate GETs and is discarded after the request.
 
@@ -84,9 +84,10 @@ Selected retrieved Canvas context **is sent to ChatGPT** in your message so Chat
 
 ## Troubleshooting and limitations
 
+- **HTTPS/network failure:** use version 0.2.1 or newer, allow Canvas site access, and keep a Canvas tab open in the same Chrome profile. A recovered connection says **using the Canvas tab**. If both request paths fail, check that Canvas opens normally and check your VPN/proxy/network. An API redirect to login requires a valid token; the fallback never uses session cookies.
 - **401:** replace an expired or revoked Canvas token. **403/404:** the resource may be locked, unpublished, unavailable or outside your permissions; other resources can still succeed.
 - **Groq key/rate limit/network/schema failure:** use the planner inspector to see the local fallback. Local only works without Groq.
-- **Files requiring redirects or another host:** this build refuses redirects and off-origin downloads to keep credentials on Canvas UvA. It reports missing content and provides a safe Canvas UI link. Some institution-hosted or CDN-backed files therefore cannot be extracted. Do not expect a redirected file's requirements to appear until its download path is supported safely.
+- **Files requiring redirects or another host:** this build rejects off-origin final responses; the tab fallback refuses redirects entirely. Native worker fetch follows browser redirects, which strip Authorization on a cross-origin redirect, and validates the final destination. It reports missing content and provides a safe Canvas UI link. Some institution-hosted or CDN-backed files therefore cannot be extracted. Do not expect a redirected file's requirements to appear until its download path is supported safely.
 - **PDF:** no OCR, password entry, or visual chart interpretation. Scanned/encrypted/malformed PDFs can return no text. Extraction is capped at 150 pages; text and excerpts may omit later sections. Nonstandard fonts and layouts may extract imperfectly.
 - **Office:** text extraction omits images, embedded objects, macros and formatting. Legacy DOC/PPT/XLS and XLSX are unsupported. ZIP expansion is bounded; corrupt files fail independently.
 - **Matching:** lexical heuristics are not a complete semantic search engine. Courses with missing or ambiguous dates may be omitted or selected incorrectly; naming the course helps. Limits and inaccessible resources can make results partial.
@@ -107,7 +108,7 @@ npm run test:browser
 npm run build
 ```
 
-`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, offscreen parsing and composer behavior. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
+`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, isolated Canvas-tab HTTPS recovery, offscreen parsing and composer behavior. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
 
 ## Manual Chrome check
 

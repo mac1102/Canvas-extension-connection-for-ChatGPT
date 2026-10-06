@@ -2,9 +2,9 @@
 
 ## Canvas ↔ Chrome extension
 
-On an explicit `@Canvas` request or connection test, the service worker sends HTTPS GET requests to `canvas.uva.nl`. Your Canvas token is used only as its Authorization header. The response may contain private course material, assignment descriptions, grades and submission status. The extension reads and processes that material locally; selected files are parsed in bundled workers. No periodic synchronization runs.
+On an explicit `@Canvas` request or connection test, the service worker sends HTTPS GET requests to `canvas.uva.nl`. Your Canvas token is used only as an Authorization header. If Chrome fails to fetch directly from the extension, the worker can temporarily pass that header to an isolated extension function in an already-open Canvas tab. This makes the same GET from the Canvas origin, omits cookies, and uses the same token identity. It never exposes the token to the page's own JavaScript or the ChatGPT content script. The response may contain private course material, assignment descriptions, grades and submission status. The extension reads and processes that material locally; selected files are parsed in bundled workers. No periodic synchronization runs.
 
-Canvas tokens stay in local trusted extension storage, apart from transmission to Canvas for authentication. The request-local response cache is held in memory and discarded after retrieval. Course material, file bytes, submission contents and grades are not stored persistently. Safe status timestamps and user-selected settings are stored; the connection test displays your name but does not persist it.
+Canvas tokens stay in local trusted extension storage, apart from transmission to Canvas for authentication. The request-local response cache is held in memory and discarded after retrieval. Course material, file bytes, submission contents and grades are not stored persistently. Safe status timestamps and user-selected settings are stored; the connection test displays and stores a redacted display name with the timestamp and successful transport (direct or Canvas tab).
 
 ## Chrome extension → Groq planner
 
