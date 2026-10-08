@@ -1,6 +1,6 @@
 {
   "name": "canvas-live-for-chatgpt",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Read-only Canvas LMS live context bridge for ChatGPT via a Chrome extension.",
@@ -20,6 +20,10 @@
     "esbuild": "0.28.2",
     "fflate": "0.8.3",
     "linkedom": "0.18.13",
-    "pdfjs-dist": "6.3.289"
+    "pdfjs-dist": "6.3.289",
+    "prosemirror-model": "1.25.12",
+    "prosemirror-schema-basic": "1.2.5",
+    "prosemirror-state": "1.4.4",
+    "prosemirror-view": "1.42.6"
   }
 }

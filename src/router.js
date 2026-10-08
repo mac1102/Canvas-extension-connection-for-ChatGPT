@@ -200,9 +200,20 @@ export function rankAssignments(query, assignments, limit = 5) {
 }
 
 export function parseTimeWindow(query, now = new Date()) {
-  const normalized = normalizeText(query);
+  const normalized = normalizeText(query).replace(/\b(?:toda+y|todday)\b/g, "today");
   const start = new Date(now);
   const end = new Date(now);
+
+  const explicitDate = String(query).match(/\b(20\d{2})-(\d{2})-(\d{2})\b/);
+  if (explicitDate) {
+    const [year, month, day] = explicitDate.slice(1).map(Number);
+    start.setFullYear(year, month - 1, day);
+    start.setHours(0, 0, 0, 0);
+    if (start.getFullYear() === year && start.getMonth() === month - 1 && start.getDate() === day) {
+      end.setTime(start.getTime()); end.setHours(23, 59, 59, 999);
+      return { start, end, label: explicitDate[0] };
+    }
+  }
 
   if (includesKeyword(normalized, "today") || includesKeyword(normalized, "hom nay")) {
     start.setHours(0, 0, 0, 0);
@@ -358,8 +369,8 @@ export function resourceMatchesSearchTerms(label, terms) {
 }
 
 export function isStudyRequest(query) {
-  const q = normalizeText(query);
+  const q = normalizeText(query).replace(/\b(?:toda+y|todday)\b/g, "today");
   return /\b(study|studying|learn|learning|classes|lectures|seminars|timetable|schedule|hoc)\b/.test(q) &&
-    /\b(today|tomorrow|this week|next week|hom nay|ngay mai|tuan nay|tuan sau)\b/.test(q) &&
+    (/\b(today|tomorrow|this week|next week|hom nay|ngay mai|tuan nay|tuan sau)\b/.test(q) || /\b20\d{2}-\d{2}-\d{2}\b/.test(query)) &&
     !/\b(study guide|case study)\b/.test(q);
 }

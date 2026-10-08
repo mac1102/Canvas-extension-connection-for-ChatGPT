@@ -5,7 +5,7 @@ import path from "node:path";
 const original = "@Canvas fetch what I am gonna study today";
 const context = '{"records":[{"total":2,"title":"Today reading"}]}';
 const modes = [
-  "send", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
+  "send", "review-first", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
   "form-submit", "paste-only", "rollback", "reject-rich", "no-send", "failure",
   "changed", "missing-runtime", "invalid-runtime", "invalidated", "disconnected"
 ];
@@ -113,12 +113,21 @@ try {
     await page.locator("#other button").click();
     assert.equal(await page.evaluate(() => globalThis.calls), 0, mode + ": ignore other controls");
 
-    if (["early-pointerdown", "early-click"].includes(mode)) await page.locator("#chat button").click();
+    if (mode === "review-first") await page.getByRole("button", { name: "Fetch Canvas and attach context without sending" }).click();
+    else if (["early-pointerdown", "early-click"].includes(mode)) await page.locator("#chat button").click();
     else if (mode === "form-submit") await page.evaluate(() => document.querySelector("#chat").requestSubmit());
     else await input.press("Enter");
 
-    const success = ["send", "delayed-state", "early-keydown", "early-pointerdown", "early-click", "form-submit", "paste-only"].includes(mode);
-    if (success) {
+    const success = ["send", "review-first", "delayed-state", "early-keydown", "early-pointerdown", "early-click", "form-submit", "paste-only"].includes(mode);
+    if (mode === "review-first") {
+      await page.waitForFunction(() => document.querySelector(".canvas-live-toast__message")?.textContent.includes("Review your draft"));
+      assert.equal(await page.evaluate(() => globalThis.sent), 0);
+      assert.ok((await input.inputValue()).includes(context));
+      await page.locator("#chat button").click();
+      assert.equal(await page.evaluate(() => globalThis.sent), 1);
+      assert.ok((await page.evaluate(() => globalThis.sentText)).includes(context));
+      assert.equal(await page.evaluate(() => globalThis.calls), 1);
+    } else if (success) {
       await page.waitForFunction(() => globalThis.sent === 1);
       const sent = await page.evaluate(() => globalThis.sentText);
       assert.ok(sent.startsWith(original + "\n"), mode);

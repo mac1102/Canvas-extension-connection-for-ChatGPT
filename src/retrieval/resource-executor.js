@@ -8,9 +8,12 @@ import { readableText, discoverLinks } from "./html.js";
 import { assignmentSummary, rubricSummary, excerpts } from "../context/serializers.js";
 import { budgetContext } from "../context/budget.js";
 import { redact } from "../privacy/redact.js";
+import { selectModuleSchedule, studyWindow, dateKey } from "./module-schedule.js";
 const FILLER = new Set("bao nhieu count total how many individual ca nhan solo yeu cau requirement requirements instruction instructions detail details description rubric moi each every all and va cai nhung nhung gi can lam need read doc xem check do toi cua current currently have has are does say about noi ve grading deadline due week next this tuan nay sau upcoming pending unsubmitted submitted da chua nop explain tell help should huong dan giai thich need needs please about work xem noi dung get retrieve khoan day days ngay trong reading material materials tai lieu fetch gonna going study studying today tomorrow hom".split(" "));
 export async function executePlan({ query, plan: proposed, client, settings, parseDocument, secrets = [], now = new Date(), planner = "local" }) {
   const plan = validatePlan(proposed), ops = new Set(plan.operations.map((op) => op.type));
+  const study = isStudyRequest(query) || ops.has("get_calendar_events");
+  const requestedWindow = studyWindow(query, plan, now);
   const graph = new ResourceGraph(), records = [], warnings = [];
   const stats = { courses: 0, assignmentsScanned: 0, matches: 0, resourcesFetched: 0, documentsParsed: 0 };
   const started = Date.now(), deadline = started + 120000;
@@ -138,7 +141,10 @@ export async function executePlan({ query, plan: proposed, client, settings, par
   const relatedDiscovery = plan.follow_links && maxDepth > 0 && selected.length > 0 && queue.length === 0;
   const discovery = relatedDiscovery || ["list_files", "get_file", "get_page", "list_modules"].some((op) => ops.has(op));
   let candidates = [];
-  if (discovery) candidates = await discoverResources(client, courses, graph, optional);
+  if (discovery) candidates = await discoverResources(client, courses, graph, optional, { window: study ? requestedWindow : null });
+  if (candidates.moduleCapReached) warnings.push("Module metadata cap reached; date-matched modules were prioritized.");
+  const schedule = study ? selectModuleSchedule(candidates.moduleGroups || [], requestedWindow) : { schedules: [], resources: new Set() };
+  records.push(...schedule.schedules);
   if (ops.has("get_syllabus")) for (const course of courses) {
     const details = await optional("Syllabus", () => client.getCourseDetails(course.id));
     const node = graph.add("Syllabus", course.id, course.id, { title: `${course.name} Syllabus` });
@@ -146,13 +152,15 @@ export async function executePlan({ query, plan: proposed, client, settings, par
     if (details?.syllabus_body && node) { addText("syllabus", node, readableText(details.syllabus_body), 80); queueLinks(details.syllabus_body, node, 0); }
   }
   const modules = new Set(selected.map((entry) => entry.node.moduleId).filter(Boolean));
-  candidates = candidates.map((node) => ({ node, score: resourceScore([query, ...plan.resource_queries, ...plan.operations.map((op) => op.query || "")].join(" "), node, { sameModule: modules.has(node.moduleId), now }) }))
+  candidates = candidates.map((node) => ({ node, score: (schedule.resources.has(node.local_id) ? 100 : 0) + resourceScore([query, ...plan.resource_queries, ...plan.operations.map((op) => op.query || "")].join(" "), node, { sameModule: modules.has(node.moduleId), now }) }))
     .sort((a, b) => b.score - a.score || a.node.local_id.localeCompare(b.node.local_id));
   if (ops.has("list_files")) for (const { node, score } of candidates.filter((c) => c.node.type === "File").slice(0, 20)) {
     records.push({ kind: "file_metadata", priority: 20, resource: node.title, resource_id: node.local_id, size: node.size, relevance: score,
       url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` });
   }
-  for (const candidate of candidates.filter((c) => c.score >= 2 && ((c.node.type === "File" && (ops.has("get_file") || relatedDiscovery)) || (c.node.type === "Page" && (ops.has("get_page") || relatedDiscovery)))).slice(0, 6)) queue.push({ ...candidate, depth: 0, related: false });
+  for (const candidate of candidates.filter((c) => c.score >= 2 &&
+    (!study || schedule.resources.has(c.node.local_id) || plan.resource_queries.length > 0) &&
+    ((c.node.type === "File" && (ops.has("get_file") || relatedDiscovery)) || (c.node.type === "Page" && (ops.has("get_page") || relatedDiscovery)))).slice(0, 6)) queue.push({ ...candidate, depth: 0, related: schedule.resources.has(candidate.node.local_id) });
   for (let index = 0; index < queue.length; index++) {
     // Newly discovered linked resources take priority over generic file candidates.
     queue.splice(index, queue.length - index, ...queue.slice(index).sort((a, b) => Number(b.related) - Number(a.related) || a.depth - b.depth));
@@ -163,14 +171,17 @@ export async function executePlan({ query, plan: proposed, client, settings, par
     await optional(`${node.type} ${node.local_id}`, async () => {
       if (node.type === "Page") {
         const page = await client.getPage(node.courseId, node.remoteId); node.title = page.title || node.title;
-        addText("resource_excerpt", node, readableText(page.body), related ? 91 : 70); queueLinks(page.body, node, depth);
+        addText("resource_excerpt", node, readableText(page.body), related ? 95 : 70, {
+          url: `${client.baseUrl}/courses/${node.courseId}/pages/${encodeURIComponent(node.remoteId)}`,
+          module_id: node.moduleId }); queueLinks(page.body, node, depth);
       } else if (node.type === "File") {
         const file = await client.getFile(node.courseId, node.remoteId);
         const bytes = await client.downloadFile(file, Math.min(settings.maxDocumentBytes, fileBytesRemaining)); fileBytesRemaining -= bytes.length;
         const parsed = await parseDocument({ filename: file.filename || file.display_name, contentType: file["content-type"] || "", bytes, maxBytes: settings.maxDocumentBytes, maxText: textRemaining });
         if (parsed.metadata?.error) { warnings.push(`${node.title}: ${parsed.metadata.error}`); return; }
         stats.documentsParsed++;
-        addText("resource_excerpt", node, parsed.text, related ? 90 : 75, { type: parsed.type, document_truncated: parsed.truncated,
+        addText("resource_excerpt", node, parsed.text, related ? 94 : 75, { type: parsed.type, document_truncated: parsed.truncated,
+          module_id: node.moduleId,
           url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` });
         if (parsed.metadata?.warning) warnings.push(`${node.title}: ${parsed.metadata.warning}`);
         if (parsed.type === "html") queueLinks(new TextDecoder().decode(bytes), node, depth);
@@ -180,13 +191,25 @@ export async function executePlan({ query, plan: proposed, client, settings, par
     });
   }
   const extras = [];
-  if (ops.has("list_modules")) for (const node of graph.nodes.values()) if (node.type === "Module" || node.type === "ModuleItem") records.push({ kind: "module", priority: 30, type: node.type, title: node.title, course_id: node.courseId });
+  if (study) records.push({ kind: "study_summary", priority: 99,
+    window: { label: requestedWindow.label, start_date: dateKey(requestedWindow.start), end_date: dateKey(requestedWindow.end), time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+    matched_modules: schedule.schedules.length,
+    learning_items: schedule.schedules.reduce((sum, item) => sum + item.days.reduce((n, day) => n + day.items.length, 0), 0),
+    complete: schedule.schedules.length > 0 && schedule.schedules.every((item) => item.complete),
+    completeness_scope: "Date-matched module metadata only; resource read failures are reported separately.",
+    limitation: "Use only date-matched module weekday sections for daily learning topics. Empty or incomplete module/calendar evidence cannot establish today's classes or required readings. Relative dates in announcements refer to their posting date." });
+  if (ops.has("list_modules") && !study) for (const node of graph.nodes.values()) if (node.type === "Module" || node.type === "ModuleItem") records.push({ kind: "module", priority: 30, type: node.type, title: node.title, course_id: node.courseId,
+    id: node.remoteId, module_id: node.moduleId, position: node.position, item_type: node.itemType,
+    content_id: node.contentId, page_url: node.pageUrl, url: node.url });
   if (ops.has("get_grades")) extras.push(optional("Grades", async () => {
     for (const e of await client.getEnrollments()) if (allowed.has(String(e.course_id))) records.push({ kind: "grade", priority: 95, course_id: e.course_id, current_score: e.grades?.current_score, current_grade: e.grades?.current_grade, final_score: e.grades?.final_score });
   }));
   if (ops.has("get_announcements")) extras.push(optional("Announcements", async () => {
-    const days = /today|hom nay/.test(normalizeText(query)) ? 1 : /week|tuan/.test(normalizeText(query)) ? 7 : 30;
-    for (const a of await client.getAnnouncements(courses.map((c) => c.id), { startDate: new Date(now.getTime() - days * 86400000), endDate: now })) records.push({ kind: "announcement", priority: 85, title: a.title, posted_at: a.posted_at, course: a.context_code, body: settings.includeDescriptions ? excerpts(readableText(a.message), query) : [] });
+    const days = study ? 14 : /today|hom nay/.test(normalizeText(query)) ? 1 : /week|tuan/.test(normalizeText(query)) ? 7 : 30;
+    const announcements = await client.getAnnouncements(courses.map((c) => c.id), { startDate: new Date(now.getTime() - days * 86400000), endDate: now });
+    for (const a of [...announcements].sort((a, b) => Date.parse(b.posted_at) - Date.parse(a.posted_at)).slice(0, study ? 3 : 50)) records.push({ kind: "announcement", priority: study ? 40 : 85, title: a.title, posted_at: a.posted_at, course: a.context_code,
+      time_scope: "Posting date; relative dates in the body refer to that date, not the retrieval date.",
+      body: settings.includeDescriptions ? excerpts(readableText(a.message), query) : [] });
   }));
   if (ops.has("get_todo")) extras.push(optional("Todo", async () => {
     for (const item of await client.getTodo()) if (allowed.has(String(item.assignment?.course_id || item.course_id))) records.push({ kind: "todo", priority: 85, course_id: item.assignment?.course_id || item.course_id, ...assignmentSummary(item.assignment || {}) });

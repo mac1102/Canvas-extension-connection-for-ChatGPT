@@ -48,7 +48,9 @@ test("AI empty title filters stay empty and keep 37 assignments from the reporte
   const calendar = calls.find((url) => url.pathname === "/api/v1/calendar_events");
   assert.deepEqual(calendar.searchParams.getAll("context_codes[]"), ["course_1"]);
   assert.equal(calendar.searchParams.get("type"), "event");
-  assert.match(calendar.searchParams.get("start_date"), /^2026-10-06T/);
+  const start = new Date(calendar.searchParams.get("start_date"));
+  assert.equal(start.getDate(), 6);
+  assert.equal(start.getHours(), 0);
 });
 test("AI named-title restrictions are respected instead of being expanded from conversational text", async () => {
   const fixture = canvasFixture();

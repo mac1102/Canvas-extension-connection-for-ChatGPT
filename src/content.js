@@ -1,6 +1,7 @@
 (() => {
   const MENTION_RE = /@canvas\b/i;
   const PARTIAL_MENTION_RE = /(?:^|\s)@(?:c|ca|can|canv|canva|canvas)$/i;
+  const installedVersion = (() => { try { return globalThis.chrome?.runtime?.getManifest?.().version || ""; } catch { return ""; } })();
   const RUNTIME_RESET = "Canvas extension was reloaded or updated. Refresh this ChatGPT tab, then send your @Canvas request again.";
   function runtimeAvailable() {
     try {
@@ -106,7 +107,7 @@
     refreshHint();
   }
 
-  async function processCanvasInvocation(composer, originalText) {
+  async function processCanvasInvocation(composer, originalText, { autoSend = true } = {}) {
     if (state.processing) return;
     state.processing = true;
     state.armedText = null;
@@ -130,7 +131,7 @@
         throw new Error("Your draft changed while Canvas was fetching. Copy the Canvas prompt or send your current draft to retry.");
       }
       showToast("Canvas fetched. Attaching context to your draft…", "loading");
-      if (!setComposerText(composer, enriched)) {
+      if (!await setComposerText(composer, enriched)) {
         throw new Error("Canvas fetched, but this editor did not accept the context. Use Copy Canvas prompt, paste it into the chat, then press Send.");
       }
       const attached = await waitForComposerText(enriched, { composer });
@@ -138,6 +139,10 @@
         throw new Error("Canvas fetched, but the editor did not keep the context. Nothing was auto-sent. Use Copy Canvas prompt and paste it into the chat.");
       }
       state.armedText = getComposerText(attached);
+      if (!autoSend) {
+        showToast("Canvas context attached and checked. Review your draft, then press Send.", "success", 12000);
+        return;
+      }
       showToast("Canvas context attached and checked. Sending…", "success");
       const sendButton = await findEnabledSendButton(1800, attached);
       const current = attached.isConnected ? attached : findComposer();
@@ -149,6 +154,7 @@
         state.sendingButton = sendButton;
         try { sendButton.click(); } finally { state.sendingButton = null; }
         setTimeout(() => {
+          if (state.pendingPrompt !== enriched) return;
           const live = findComposer();
           if (live && readyToSend(getComposerText(live))) {
             showToast("Canvas context ready — press Send", "success", 6000);
@@ -182,7 +188,7 @@
     if (PARTIAL_MENTION_RE.test(text.trim())) {
       showHint(composer, "autocomplete");
     } else if (MENTION_RE.test(text)) {
-      showHint(composer, "active");
+      showHint(composer, readyToSend(text) ? "ready" : "active");
     } else {
       removeHint();
     }
@@ -194,12 +200,15 @@
       hint.type = "button";
       hint.className = "canvas-live-hint";
       hint.addEventListener("mousedown", (event) => event.preventDefault());
-      hint.addEventListener("click", () => {
+      hint.addEventListener("click", async () => {
         const current = findComposer();
         if (!current) return;
         const text = getComposerText(current);
         if (PARTIAL_MENTION_RE.test(text.trim())) {
-          setComposerText(current, text.replace(/@(?:c|ca|can|canv|canva|canvas)$/i, "@Canvas "));
+          await setComposerText(current, text.replace(/@(?:c|ca|can|canv|canva|canvas)$/i, "@Canvas "));
+        } else if (MENTION_RE.test(text) && !readyToSend(text)) {
+          void processCanvasInvocation(current, text, { autoSend: false });
+          return;
         }
         current.focus();
         refreshHint();
@@ -211,7 +220,8 @@
     state.hint.dataset.mode = mode;
     state.hint.innerHTML = mode === "autocomplete"
       ? '<span class="canvas-live-dot"></span><strong>@Canvas</strong><span>Live LMS</span><kbd>↵</kbd>'
-      : '<span class="canvas-live-dot"></span><strong>Canvas live</strong><span>Fresh fetch on send</span>';
+      : `<span class="canvas-live-dot"></span><strong>${mode === "ready" ? "Canvas ready" : "Fetch Canvas"}</strong><span>${mode === "ready" ? "Press Send" : "Attach to draft"}${installedVersion ? ` · v${installedVersion}` : ""}</span>`;
+    state.hint.setAttribute("aria-label", mode === "autocomplete" ? "Complete Canvas mention" : mode === "ready" ? "Canvas context attached; press Send" : "Fetch Canvas and attach context without sending");
     positionHint(composer);
   }
 

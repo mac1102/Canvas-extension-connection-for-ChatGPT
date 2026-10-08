@@ -50,7 +50,7 @@
     selection?.removeAllRanges();
     selection?.addRange(range);
   }
-  function setComposerText(composer, text) {
+  async function setComposerText(composer, text) {
     if (!composer?.isConnected) return false;
     composer.focus();
     if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
@@ -64,7 +64,13 @@
       return true;
     }
     if (!composer.isContentEditable) return false;
+    const previous = getComposerText(composer);
     selectContents(composer);
+    // Rich editors synchronize their model selection on selectionchange. Give
+    // that native event a turn before paste, or paste may append at the old caret.
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    if (!composer.isConnected || !sameComposerText(getComposerText(composer), previous) ||
+      !sameComposerText(window.getSelection()?.toString() || "", previous)) return false;
     // Let rich editors process paste through their own document/state transaction.
     // A DOM-only textContent replacement can leave their send payload unchanged.
     try {

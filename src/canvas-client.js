@@ -235,7 +235,16 @@ export class CanvasClient {
   getPages(c) { return this.getAll(`/api/v1/courses/${id(c)}/pages`, { sort: "updated_at", order: "desc" }); }
   getPage(c, p) { return this.get(`/api/v1/courses/${id(c)}/pages/${slug(p)}`); }
   getFiles(c) { return this.getAll(`/api/v1/courses/${id(c)}/files`, { sort: "updated_at", order: "desc" }); }
-  getFile(c, f) { return this.get(`/api/v1/courses/${id(c)}/files/${id(f)}`); }
+  async getFile(c, f) {
+    const courseId = id(c), fileId = id(f);
+    try { return await this.get(`/api/v1/courses/${courseId}/files/${fileId}`); }
+    catch (error) {
+      if (![403, 404].includes(error.status)) throw error;
+      // Module-linked files may be readable through the canonical Files API even
+      // when the course Files tab/list is unavailable. Both paths use the token.
+      return this.get(`/api/v1/files/${fileId}`);
+    }
+  }
   getFolders(c) { return this.getAll(`/api/v1/courses/${id(c)}/folders`); }
   getFolderFiles(f) { return this.getAll(`/api/v1/folders/${id(f)}/files`); }
   getFolderFolders(f) { return this.getAll(`/api/v1/folders/${id(f)}/folders`); }
