@@ -33,6 +33,8 @@ const context = await chromium.launchPersistentContext("", {
 });
 
 try {
+  // Test-only: the signed storage hostname maps to our loopback HTTPS fixture.
+  await context.grantPermissions(["local-network-access"], { origin: "https://canvas.uva.nl" });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker", { timeout: 15000 });
   const id = new URL(worker.url()).host;
   const page = await context.newPage();
