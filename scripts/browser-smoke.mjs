@@ -1,6 +1,7 @@
 import { chromium } from "@playwright/test";
 import assert from "node:assert/strict";
 import path from "node:path";
+import { prosemirrorFixture } from "./prosemirror-fixture.mjs";
 import { pdfBytes } from "../tests/fixtures/canvas.mjs";
 import { zipSync, strToU8 } from "fflate";
 
@@ -145,55 +146,45 @@ try {
           version: 1, course_scope: { mode: "current", queries: [] },
           operations: [
             { type: "list_assignments", query: null, resource_ids: [], required: true },
-            { type: "get_calendar_events", query: "today", resource_ids: [], required: false }
+            { type: "get_calendar_events", query: "today", resource_ids: [], required: false },
+            ...["list_modules", "list_files", "get_page", "get_file"].map((type) => ({ type, query: null, resource_ids: [], required: false }))
           ],
           assignment_filters: { search_terms: [], time_window: null, submission_state: null, individual: false },
-          resource_queries: [], follow_links: false, max_depth: 2, max_resources: 30, needs_count: false
+          resource_queries: [], follow_links: true, max_depth: 2, max_resources: 30, needs_count: false
         };
         return json({ choices: [{ finish_reason: "stop", message: { content: JSON.stringify(plan) } }] });
       }
       if (url.pathname === "/api/v1/courses") return json([{ id: 1, name: "CONNECTIONS" }]);
       if (url.pathname === "/api/v1/courses/1/assignments") return json(
         Array.from({ length: 37 }, (_, i) => ({ id: i + 1, name: "Weekly Goal " + i, due_at: null })));
-      if (url.pathname === "/api/v1/calendar_events") return json([
-        { id: 10, title: "Data acquisition seminar", context_code: "course_1",
-          start_at: new Date().toISOString(), end_at: new Date().toISOString(), location_name: "Room A" }
-      ]);
+      if (url.pathname === "/api/v1/calendar_events") return json([]);
+      if (url.pathname === "/api/v1/courses/1/pages") return new Response("", { status: 404 });
+      if (url.pathname === "/api/v1/courses/1/files") return new Response("", { status: 403 });
+      if (url.pathname === "/api/v1/courses/1/modules") {
+        const start = new Date(), end = new Date();
+        start.setDate(start.getDate() - (start.getDay() || 7) + 1);
+        end.setTime(start.getTime()); end.setDate(end.getDate() + 6);
+        const month = (d) => d.toLocaleDateString("en-US", { month: "long" });
+        return json([{ id: 60, name: `Week: ${month(start)} ${start.getDate()} - ${month(end)} ${end.getDate()}`, items_count: 4, items: [
+          { id: 61, position: 1, title: new Date().toLocaleDateString("en-US", { weekday: "long" }), type: "SubHeader" },
+          { id: 62, position: 2, title: "Data acquisition seminar", type: "Page", page_url: "today-topic" },
+          { id: 63, position: 3, title: "Deadlines", type: "SubHeader" },
+          { id: 64, position: 4, title: "Unrelated deadline", type: "Assignment", content_id: 100 }
+        ] }]);
+      }
+      if (url.pathname === "/api/v1/courses/1/pages/today-topic") return json({
+        title: "Data acquisition seminar", body: '<p>Study source provenance.</p><a href="/courses/1/files/300">Today reading</a>'
+      });
+      if (url.pathname === "/api/v1/courses/1/files/300") return new Response("", { status: 403 });
+      if (url.pathname === "/api/v1/files/300") return json({ id: 300, filename: "reading.txt", "content-type": "text/plain", size: 100,
+        url: "https://canvas.uva.nl/files/300/download" });
+      if (url.pathname === "/files/300/download") return new Response("Today reading: validate data provenance and recording consent.");
       return json([]);
     };
   });
+  const editorHtml = await prosemirrorFixture();
   await context.route("https://chatgpt.com/**", (route) => route.fulfill({
-    status: 200, contentType: "text/html", body: String.raw`<!doctype html>
-      <form><div id="prompt-textarea" contenteditable="true" style="min-height:40px"></div><button data-testid="send-button" type="button">Send</button></form>
-      <script>
-        window.sent = 0; window.editorState = "";
-        const editor = document.querySelector("#prompt-textarea");
-        editor.addEventListener("input", () => { window.editorState = editor.innerText; });
-        editor.addEventListener("paste", (event) => {
-          event.preventDefault();
-          const next = event.clipboardData.getData("text/plain");
-          editor.replaceChildren(...next.split("\n").map((line) => {
-            const p = document.createElement("p");
-            p.textContent = line;
-            if (!line) p.append(document.createElement("br"));
-            return p;
-          }));
-          // The sender reads editor state, which intentionally lags its DOM.
-          setTimeout(() => { window.editorState = next; }, 180);
-        });
-        const send = () => {
-          window.sent++;
-          window.sentText = window.editorState;
-          editor.replaceChildren();
-          window.editorState = "";
-        };
-        document.addEventListener("keydown", (event) => {
-          if (event.target === editor && event.key === "Enter") {
-            event.preventDefault(); event.stopImmediatePropagation(); send();
-          }
-        }, true);
-        document.querySelector("button").onclick = send;
-      </script>`
+    status: 200, contentType: "text/html", body: editorHtml
   }));
   const chatgpt = await context.newPage();
   chatgpt.on("pageerror", (error) => errors.push(error.message));
@@ -207,9 +198,22 @@ try {
   assert.ok(enrichedStudy.includes('"matches":37'));
   assert.ok(enrichedStudy.includes('"search_terms":[]'));
   assert.ok(enrichedStudy.includes("Data acquisition seminar"));
+  assert.ok(enrichedStudy.includes('"kind":"module_schedule"'));
+  assert.ok(enrichedStudy.includes("Today reading: validate data provenance"));
+  assert.ok(!enrichedStudy.includes("Unrelated deadline"));
   assert.ok(enrichedStudy.includes("<<< END CANVAS LIVE DATA >>>"));
   assert.equal(await chatgpt.evaluate(() => window.sent), 1);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 1);
+  // The visible Fetch Canvas action attaches verified evidence for review, without sending.
+  await chatgpt.locator("#prompt-textarea").fill("@Canvas fetch what I'm gonna learn todaay");
+  await chatgpt.getByRole("button", { name: "Fetch Canvas and attach context without sending" }).click();
+  await chatgpt.locator(".canvas-live-toast__message").filter({ hasText: "Review your draft" }).waitFor();
+  assert.equal(await chatgpt.evaluate(() => window.sent), 1);
+  assert.ok((await chatgpt.locator("#prompt-textarea").innerText()).includes("Today reading: validate data provenance"));
+  await chatgpt.locator('[data-testid="send-button"]').click();
+  await chatgpt.waitForFunction(() => window.sent === 2);
+  assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 2);
+  assert.ok((await chatgpt.evaluate(() => window.sentText)).includes("<<< END CANVAS LIVE DATA >>>"));
   await chatgpt.close();
   await context.unroute("https://chatgpt.com/**");
 
@@ -228,15 +232,15 @@ try {
     const composer = await context.newPage();
     await composer.setContent(markup);
     await composer.addScriptTag({ path: path.join(extension, "src/chatgpt/composer-adapter.js") });
-    assert.equal(await composer.evaluate(() => {
+    assert.equal(await composer.evaluate(async () => {
       const el = CanvasComposer.findComposer();
-      CanvasComposer.setComposerText(el, "Original draft\nCanvas context");
+      await CanvasComposer.setComposerText(el, "Original draft\nCanvas context");
       return CanvasComposer.getComposerText(el);
     }), "Original draft\nCanvas context");
     await composer.close();
   }
 
-  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, real ChatGPT-to-GPT-OSS study retrieval, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
+  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, actual MV3-to-GPT-OSS module/day retrieval with genuine ProseMirror and review/send, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
 } finally {
   await context.close();
 }

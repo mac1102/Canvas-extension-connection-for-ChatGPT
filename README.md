@@ -14,7 +14,7 @@ git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the composer synchronization fixes are version **0.2.3**. Keep your existing extension folder and use Reload to preserve saved tokens.
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the complete study-retrieval and review flow is version **0.3.0**. Keep your existing extension folder and use Reload to preserve saved tokens.
 
 ## Configure
 
@@ -24,6 +24,10 @@ For an existing installation, run `git pull`, click **Reload** on the extension,
 4. Choose **AI planner with local fallback** and enable Groq. GPT-OSS decides resources and filters for every eligible request, including simple requests. The local planner is used if AI planning is unavailable, invalid, or blocked by the query privacy guard. **Local only** disables planner network calls. Previously saved Hybrid/AI-preferred modes both migrate to this AI-first behavior. Groq is disabled until you explicitly enable it.
 
 Saved keys are never displayed or returned to the content script. Blank fields preserve existing keys. Each key has a separate removal button. A connection test saves entered settings first; the Groq test sends only a synthetic assignment-list request.
+
+## Fetch and send
+
+Type an `@Canvas` question in ChatGPT. Press Enter/Send to fetch, attach and verify context before auto-send. You can also click the visible **Fetch Canvas** button above the composer to fetch and attach the prompt for review, then press Send yourself. The button shows the loaded content-script version; after updating it should show **v0.3.0**. If insertion fails, use **Copy Canvas prompt** and paste it into the composer.
 
 ## Examples
 
@@ -87,9 +91,10 @@ Selected retrieved Canvas context **is sent to ChatGPT** in your message so Chat
 
 - **Fetch succeeds but context is missing:** use version 0.2.3 or newer, Reload the extension, and refresh the ChatGPT tab. The extension waits for the full enriched draft to remain stable before clicking Send. If the editor refuses or removes it, auto-send stops and **Copy Canvas prompt** lets you paste the fetched prompt manually.
 - **Missing runtime / extension context invalidated:** after reloading or updating the extension, refresh every open ChatGPT tab. Existing page scripts may lose extension messaging. Requests preserve the draft and display a refresh instruction rather than an undefined `sendMessage` error.
-- **What am I studying today?** AI planning can select Calendar, modules, syllabus, announcements and reading resources. A study date does not automatically become an assignment deadline filter. If Canvas has no published calendar events or your timetable lives elsewhere, the evidence cannot establish today's classes.
+- **What am I studying today?** AI planning selects Calendar and dated module sections with linked pages/files. When Calendar is empty, explicit month/day ranges and weekday headers can identify planned learning topics. Module records preserve dates, parent relationships, resource types and source links; they do not prove class times, rooms, attendance or timetable changes. Week numbers alone and ambiguous multi-week headings do not establish a daily schedule. A study date does not automatically become an assignment deadline filter. Announcements retain their posting date, so an old “today” notice does not become today's schedule.
 
 - **HTTPS/network failure:** use version 0.2.1 or newer, allow Canvas site access, and keep a Canvas tab open in the same Chrome profile. A recovered connection says **using the Canvas tab**. If both request paths fail, check that Canvas opens normally and check your VPN/proxy/network. An API redirect to login requires a valid token; the fallback never uses session cookies.
+- **Files/Pages listing 403/404:** accessible module references can still identify specific pages and files. Direct file metadata can also use Canvas's canonical `/api/v1/files/:id` endpoint with the same saved token. Resources that remain unavailable are reported; this does not grant extra permissions.
 - **401:** replace an expired or revoked Canvas token. **403/404:** the resource may be locked, unpublished, unavailable or outside your permissions; other resources can still succeed.
 - **Groq key/rate limit/network/schema failure:** use the planner inspector to see the local fallback. Local only works without Groq.
 - **Files requiring redirects or another host:** this build rejects off-origin final responses; the tab fallback refuses redirects entirely. Native worker fetch follows browser redirects, which strip Authorization on a cross-origin redirect, and validates the final destination. It reports missing content and provides a safe Canvas UI link. Some institution-hosted or CDN-backed files therefore cannot be extracted. Do not expect a redirected file's requirements to appear until its download path is supported safely.
@@ -113,7 +118,7 @@ npm run test:browser
 npm run build
 ```
 
-`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, isolated Canvas-tab HTTPS recovery, offscreen parsing and composer behavior. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
+`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, isolated Canvas-tab HTTPS recovery, offscreen parsing and composer behavior, empty-calendar module-day retrieval, direct linked files after listing failures, and the review-before-send action. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
 
 ## Manual Chrome check
 

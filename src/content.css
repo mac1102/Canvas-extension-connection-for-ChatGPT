@@ -25,7 +25,7 @@
   }
 }
 
-.canvas-live-hint[data-mode="autocomplete"] { cursor: pointer; }
+.canvas-live-hint { cursor: pointer; }
 .canvas-live-hint span:not(.canvas-live-dot) { opacity: 0.62; }
 .canvas-live-hint kbd {
   padding: 2px 5px;

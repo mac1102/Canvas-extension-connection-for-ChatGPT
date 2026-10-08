@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0 — 2026-10-08
+
+- Select learning topics from explicit module date ranges and weekday sections, preserving module/item IDs, source links, resource types and incomplete evidence. Never infer class times or rooms from module titles.
+- Rank and read resources referenced by the selected day even when their names do not resemble the conversational query; follow linked readings within retrieval limits.
+- Recover module-linked file metadata through the canonical bearer-authenticated Files API after a course endpoint 403/404. Listing failures remain visible and do not discard module references.
+- Handle the reported learn-todaay prompt, keep old announcements below current learning evidence, and distinguish posting dates from the day being requested.
+- Add a visible Fetch Canvas action to attach context for review before manual Send, and show the installed content-script version.
+- Add synthetic end-to-end regressions for many-week courses, empty calendars, inaccessible listings, partial items, wrong-day exclusion, direct resources and verified review/manual send.
+
 ## 0.2.3 — 2026-10-06
 
 - Intercept Enter, Send pointer/click and form submission at window capture from document start, before the page can send an unmodified Canvas request.
