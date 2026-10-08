@@ -107,12 +107,18 @@ try {
   const connection = await worker.evaluate(() => chrome.storage.local.get("lastConnection"));
   assert.equal(connection.lastConnection.transport, "canvas-tab");
   const storageRequests = [];
+  const fileFailures = [];
+  context.on("requestfailed", (request) => {
+    if (/files\/21|instructure-uploads\.s3/.test(request.url())) fileFailures.push({ host: new URL(request.url()).host, reason: request.failure()?.errorText });
+  });
+  canvasTab.on("console", (message) => { if (message.type() === "error") console.log("Canvas fixture console:", message.text()); });
   await context.route("https://canvas.uva.nl/files/21/download", (route) => route.fulfill({ status: 302,
     headers: { location: "https://instructure-uploads.s3.eu-central-1.amazonaws.com/notebook.ipynb?X-Amz-Signature=fixture" } }));
   await context.route("https://instructure-uploads.s3.eu-central-1.amazonaws.com/**", (route) => {
     storageRequests.push(route.request().headers());
     return route.fulfill({ status: 200, contentType: "application/x-ipynb+json",
-      headers: { "access-control-allow-origin": "*" }, body: '{"cells":[{"cell_type":"markdown","source":["Selenium notebook source"]}]}' });
+      headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, OPTIONS", "access-control-allow-headers": "authorization" },
+      body: '{"cells":[{"cell_type":"markdown","source":["Selenium notebook source"]}]}' });
   });
   await worker.evaluate(() => {
     globalThis.fetch = async (input) => {
@@ -127,7 +133,7 @@ try {
     };
   });
   const recoveredFile = await page.evaluate(() => chrome.runtime.sendMessage({ type: "FETCH_CANVAS_CONTEXT", query: "@Canvas course manual CONNECTIONS" }));
-  assert.ok(recoveredFile.ok && recoveredFile.context.includes("Selenium notebook source"), JSON.stringify(recoveredFile));
+  assert.ok(recoveredFile.ok && recoveredFile.context.includes("Selenium notebook source"), JSON.stringify({ result: recoveredFile, fileFailures, storageRequests }));
   assert.equal(recoveredFile.meta.documentsParsed, 1);
   assert.equal(storageRequests.length, 1);
   assert.equal(storageRequests[0].authorization, undefined, "native cross-origin redirect strips the bearer token");
