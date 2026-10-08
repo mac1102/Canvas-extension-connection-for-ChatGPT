@@ -32,7 +32,7 @@ test("empty calendar and inaccessible global listings still yield the correct mo
   assert.equal(fixture.calls.filter((url) => url.pathname === "/files/301/download").length, 1);
   assert.ok(!fixture.calls.some((url) => url.pathname.endsWith("/undefined")));
   assert.equal(result.stats.documentsParsed, 2);
-  assert.ok(records.some((r) => r.kind === "warning" && /File metadata: HTTP 403/.test(r.message)));
+  assert.ok(!fixture.calls.some((url) => ["/api/v1/courses/1/files", "/api/v1/courses/1/pages"].includes(url.pathname)), "daily fetch skips broad catalogs");
   assert.ok(result.context.length < DEFAULT_SETTINGS.maxContextChars);
 });
 test("changing the requested day selects Thursday, without Tuesday resources or Friday deadlines", async () => {
@@ -102,5 +102,5 @@ test("a relevant week after the metadata cap is selected ahead of old modules", 
   const records = JSON.parse(result.context).records;
   assert.equal(records.find((r) => r.kind === "module_schedule").module_id, 60);
   assert.ok(result.context.includes("Reading: chain rule worked examples"));
-  assert.ok(records.some((r) => r.kind === "warning" && /metadata cap/.test(r.message)));
+  assert.ok(!records.some((r) => r.kind === "warning" && /metadata cap/.test(r.message)), "old weeks do not consume the current-day cap");
 });

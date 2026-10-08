@@ -14,7 +14,7 @@ git clone https://github.com/mac1102/Canvas-extension-connection-for-ChatGPT.git
 
 Open `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the folder containing `manifest.json`. Parser bundles are checked in: installation requires no Node, npm, Python, build step, or CDN.
 
-For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions. Settings shows the installed version; the complete study-retrieval and review flow is version **0.3.0**. Keep your existing extension folder and use Reload to preserve saved tokens.
+For an existing installation, run `git pull`, click **Reload** on the extension, and refresh your ChatGPT tabs. Chrome may ask you to accept updated permissions for Canvas file storage. Settings and the composer action show version **0.4.0**. Keep your existing extension folder and use Reload to preserve saved tokens.
 
 ## Configure
 
@@ -27,7 +27,7 @@ Saved keys are never displayed or returned to the content script. Blank fields p
 
 ## Fetch and send
 
-Type an `@Canvas` question in ChatGPT. Press Enter/Send to fetch, attach and verify context before auto-send. You can also click the visible **Fetch Canvas** button above the composer to fetch and attach the prompt for review, then press Send yourself. The button shows the loaded content-script version; after updating it should show **v0.3.0**. If insertion fails, use **Copy Canvas prompt** and paste it into the composer.
+Type an `@Canvas` question in ChatGPT, then press Enter/Send or click **Fetch & Send**. The extension fetches once, attaches and verifies the descriptions/document excerpts, and sends automatically. It consumes the invocation tag; an attached data block cannot trigger another fetch, even if edited. Retrying insertion after an editor rollback reuses the fetched result. A new question/tag after sending gets fresh data. Merely typing an unfinished tag does not send a question. The composer is empty after ChatGPT accepts the message. If ChatGPT disables Send or rejects insertion, the extension preserves the draft and offers **Copy Canvas prompt**; sending the attached/copied prompt does not refetch.
 
 ## Examples
 
@@ -58,7 +58,7 @@ Canvas API → course calendar and metadata → bounded linked-resource retrieva
 local document workers → ranked excerpts → JSON context budget → composer
 ```
 
-The service worker stores credentials and controls retrieval. If its direct API fetch fails with a browser network error, it can dispatch a bounded GET to a top-frame Canvas tab using Chrome's isolated world. That temporary request uses the same saved bearer token, omits browser cookies, and never runs in the page's JavaScript world. It does not switch to the logged-in session or bypass token errors. After recovery, remaining API calls in that retrieval use the working tab; file downloads remain in the service worker. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. A validated AI plan controls the operations and filters without keyword operations being merged back in. An empty AI assignment-title filter remains empty. Routing context and the popup inspector identify the planner used. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
+The service worker stores credentials and controls retrieval. If direct Canvas API or file HTTPS fetch fails with a browser network error, it can dispatch a bounded GET to a top-frame Canvas tab using Chrome's isolated world. That temporary request uses the same saved bearer token, omits browser cookies, and never runs in the page's JavaScript world. It does not switch to the logged-in session or bypass token errors. After recovery, remaining Canvas calls in that retrieval use the working tab. Storage requests omit the bearer token. Groq receives no Canvas tools it can execute. Plans use a strict JSON Schema and a second local validator; unknown operations, arbitrary resource IDs and excessive limits are rejected. A validated AI plan controls the operations and filters without keyword operations being merged back in. An empty AI assignment-title filter remains empty. Routing context and the popup inspector identify the planner used. The planner normally makes one non-streaming request at temperature 0, low reasoning, and 700 completion tokens. Invalid output permits one medium-reasoning retry (1000 tokens). HTTP errors and an eight-second timeout fall back locally.
 
 Assignment inventory and details run together when needed. Descriptions can lead to Canvas pages and files; cycles and duplicate resources are suppressed. Generic discovery ranks file/page/module metadata before downloading up to six candidates. Directly linked resources take priority. A request-local cache prevents duplicate GETs and is discarded after the request.
 
@@ -69,7 +69,7 @@ Document parsing happens in a local offscreen document's workers. PDF.js, ZIP ex
 - Current user; courses and course details; syllabus; course calendar events with times, locations and descriptions. Calendar contexts are batched in groups of ten.
 - Assignments, details, assignment groups, rubrics where accessible, and your submission status/score.
 - Announcements, enrollment grades, todo, modules and module items, pages and page bodies, files and folders.
-- PDF text, DOCX paragraphs, PPTX slides/notes, TXT, Markdown, HTML, CSV, JSON and XML.
+- PDF text, DOCX paragraphs, PPTX slides/notes, Jupyter notebook cell sources, YAML, Python/SQL/R source text, TXT, Markdown, HTML, CSV, JSON and XML.
 
 Canvas operations are GET-only. The extension does not submit assignments, change grades, upload, edit or delete Canvas data. It does not retrieve submission attachment bodies or external tools.
 
@@ -97,9 +97,10 @@ Selected retrieved Canvas context **is sent to ChatGPT** in your message so Chat
 - **Files/Pages listing 403/404:** accessible module references can still identify specific pages and files. Direct file metadata can also use Canvas's canonical `/api/v1/files/:id` endpoint with the same saved token. Resources that remain unavailable are reported; this does not grant extra permissions.
 - **401:** replace an expired or revoked Canvas token. **403/404:** the resource may be locked, unpublished, unavailable or outside your permissions; other resources can still succeed.
 - **Groq key/rate limit/network/schema failure:** use the planner inspector to see the local fallback. Local only works without Groq.
-- **Files requiring redirects or another host:** this build rejects off-origin final responses; the tab fallback refuses redirects entirely. Native worker fetch follows browser redirects, which strip Authorization on a cross-origin redirect, and validates the final destination. It reports missing content and provides a safe Canvas UI link. Some institution-hosted or CDN-backed files therefore cannot be extracted. Do not expect a redirected file's requirements to appear until its download path is supported safely.
+- **Linked files:** date-scoped requests skip unrelated module item lists and broad Page/File catalogs. Page/assignment descriptions retain source links and linked resource IDs. Files use course metadata, canonical metadata and, when needed, Canvas's authenticated `public_url` endpoint. Worker and isolated Canvas-tab downloads are bounded. Canvas-issued signed S3/CloudFront URLs and Canvas user-content hosts are supported; storage requests carry no Canvas bearer token or cookies. Other hosts remain unsupported. `file_detail` and `file_summary` distinguish read, failed, no-text and budget-skipped files. Genuine Canvas access denials cannot be repaired by the extension.
 - **PDF:** no OCR, password entry, or visual chart interpretation. Scanned/encrypted/malformed PDFs can return no text. Extraction is capped at 150 pages; text and excerpts may omit later sections. Nonstandard fonts and layouts may extract imperfectly.
 - **Office:** text extraction omits images, embedded objects, macros and formatting. Legacy DOC/PPT/XLS and XLSX are unsupported. ZIP expansion is bounded; corrupt files fail independently.
+- **Notebooks and source files:** Jupyter notebooks extract ordered markdown/code cell sources without executing code or copying stored outputs/images. YAML, Python, SQL and R files are read as text. Context excerpts are bounded; a parsed file does not mean its full binary is uploaded as a ChatGPT attachment.
 - **Matching:** lexical heuristics are not a complete semantic search engine. Courses with missing or ambiguous dates may be omitted or selected incorrectly; naming the course helps. Limits and inaccessible resources can make results partial.
 - **ChatGPT UI changes:** reload the extension and refresh the tab. Multiple composer/send selectors are used. If no Send button is available, a verified enriched draft remains ready for manual Send. If context insertion fails, use **Copy Canvas prompt**, paste it into the composer, then Send. Edits made during retrieval are preserved.
 - **Long requests:** service-worker restarts or browser closure can interrupt work. No background sync or persistent course cache is used; retry the request.
@@ -118,7 +119,7 @@ npm run test:browser
 npm run build
 ```
 
-`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, isolated Canvas-tab HTTPS recovery, offscreen parsing and composer behavior, empty-calendar module-day retrieval, direct linked files after listing failures, and the review-before-send action. Fixtures include CONNECTIONS → Individual Contribution IV → Assessment Requirements → Course Manual.pdf and a 200-file course. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
+`npm run build` reproduces checked-in vendor assets from pinned dependencies. CI checks the resulting vendor diff, syntax, secrets, manifest paths, named ES module imports, unit/integration/privacy tests, actual MV3 registration, isolated Canvas-tab API/file HTTPS recovery, real signed-storage redirects, offscreen parsing, empty-calendar module-day retrieval and one fetch/send per tag. Composer tests cover rapid repeated sends, duplicate installation, cached insertion retries, edited attached data and a genuinely new invocation. Fixtures include three daily pages → two assignments → seven files despite inaccessible catalogs and 200 unrelated modules. Tests use synthetic credentials and mock Canvas/Groq HTTP; they do not contact your accounts.
 
 ## Manual Chrome check
 

@@ -6,6 +6,8 @@ On an explicit `@Canvas` request or connection test, the service worker sends HT
 
 Canvas tokens stay in local trusted extension storage, apart from transmission to Canvas for authentication. The request-local response cache is held in memory and discarded after retrieval. Course material, file bytes, submission contents and grades are not stored persistently. Safe status timestamps and user-selected settings are stored; the connection test displays and stores a redacted display name with the timestamp and successful transport (direct or Canvas tab).
 
+Selected file downloads may use signed S3/CloudFront URLs or Canvas user-content hosts returned by authenticated Canvas endpoints. These storage requests send no Canvas token or browser cookies; native cross-origin redirects remove Authorization. Signed URL parameters are used locally and omitted from chat context. Host permissions allow these storage downloads, while executable links remain limited to selected Canvas resources.
+
 ## Chrome extension → Groq planner
 
 Groq is disabled initially. With it enabled in AI planner with local fallback mode, every eligible user query is sent to GPT-OSS for resource planning, including simple queries. Local only sends no planner requests. Saved Hybrid and AI-preferred modes migrate to this AI-first behavior. The query privacy guard remains in place, and errors or blocked queries fall back locally.
@@ -18,7 +20,7 @@ Your own query is still an external data disclosure. Detection cannot identify e
 
 ## Chrome extension → ChatGPT
 
-The extension appends selected Canvas evidence to your original prompt and attempts to send it through the ChatGPT composer. This selected context can include assignment requirements, document excerpts, announcements, submission status or grades when requested. **It is sent to ChatGPT because ChatGPT needs it to answer.** ChatGPT applies its own account and data policies.
+The extension attaches selected Canvas evidence to your question, consumes the invocation tag, verifies insertion and sends once through the ChatGPT composer. This context can include assignment requirements, page descriptions, source links, notebook/source/document excerpts, announcements, submission status or grades when requested. **It is sent to ChatGPT because ChatGPT needs it to answer.** ChatGPT applies its own account and data policies. File text excerpts are sent as context; the original binary files are not uploaded as attachments. An insertion retry reuses the fetched context in tab memory until sending or starting a different request; attached data does not automatically refetch.
 
 Neither credential is injected. Known credentials are redacted from retrieved strings before JSON serialization, and prompts containing a saved credential are rejected. Signed download parameters are removed; file references use Canvas UI URLs. The content script receives only compact context and safe execution metadata, never credential values or raw API objects.
 

@@ -58,11 +58,10 @@ test("direct HTTP 401 stays an authentication error without querying tabs", asyn
   assert.equal(chromeApi.injections.length, 0);
 });
 
-test("timeouts, application errors and file downloads never trigger the tab transport", async () => {
+test("timeouts, application errors and off-origin requests never trigger the tab transport", async () => {
   for (const [url, error] of [
     [BASE + "/api/v1/users/self", new DOMException("Aborted", "AbortError")],
     [BASE + "/api/v1/users/self", new Error("application failure")],
-    [BASE + "/files/1/download", new TypeError("network")],
     ["https://other.example/api/v1/users/self", new TypeError("network")]
   ]) {
     const chromeApi = tabChrome();
@@ -70,6 +69,35 @@ test("timeouts, application errors and file downloads never trigger the tab tran
     await assert.rejects(transport(url, init), (actual) => actual === error);
     assert.equal(chromeApi.injections.length, 0);
   }
+});
+
+test("Canvas file network failures recover in the isolated tab within the requested byte limit", async () => {
+  const chromeApi = tabChrome({ status: 200, headers: { "content-type": "text/plain" }, bytes: [72, 105] });
+  const transport = createCanvasFetch({ chromeApi, fetchImpl: async () => { throw new TypeError("network"); } });
+  const bytes = await new CanvasClient({ token: "fixture-token", fetchImpl: transport })
+    .downloadFile({ id: 1, url: BASE + "/files/1/download" }, 1024);
+  assert.equal(new TextDecoder().decode(bytes), "Hi");
+  assert.equal(chromeApi.injections.length, 1);
+  assert.equal(chromeApi.injections[0].args[0].maxBytes, 1024);
+});
+
+test("serialized file transport accepts signed storage and rejects unrelated final hosts", async () => {
+  const serialized = new Function("return (" + fetchCanvasInTab.toString() + ")")();
+  for (const [url, accepted] of [
+    ["https://uploads.s3.eu-central-1.amazonaws.com/reading.txt?X-Amz-Signature=test", true],
+    ["https://evil.example/reading.txt?X-Amz-Signature=test", false]
+  ]) await inTab(async (_, options) => {
+    assert.equal(options.redirect, "follow");
+    assert.equal(options.credentials, "omit");
+    const response = new Response("File text");
+    Object.defineProperty(response, "url", { value: url });
+    return response;
+  }, async () => {
+    const result = await serialized(request({ url: BASE + "/files/1/download" }));
+    assert.equal(result.status === 200, accepted);
+    if (accepted) assert.equal(new TextDecoder().decode(new Uint8Array(result.bytes)), "File text");
+    else assert.equal(result.error, "destination");
+  });
 });
 
 test("no open Canvas tab produces an actionable safe error", async () => {

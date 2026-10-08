@@ -1,12 +1,12 @@
 import { moduleDateRange } from "./module-schedule.js";
-export async function discoverResources(client, courses, graph, optional, { window = null } = {}) {
+export async function discoverResources(client, courses, graph, optional, { window = null, includeFiles = true, includePages = true } = {}) {
   const candidates = [];
   candidates.moduleGroups = [];
   for (const course of courses) {
     const root = graph.add("Course", course.id, course.id, { title: course.name });
     const [files, pages, modules] = await Promise.all([
-      optional("File metadata", () => client.getFiles(course.id), []),
-      optional("Page metadata", () => client.getPages(course.id), []),
+      includeFiles ? optional("File metadata", () => client.getFiles(course.id), []) : [],
+      includePages ? optional("Page metadata", () => client.getPages(course.id), []) : [],
       optional("Module metadata", () => client.getModules(course.id), [])
     ]);
     for (const [type, items] of [["File", files], ["Page", pages]]) for (const item of items) {
@@ -16,11 +16,13 @@ export async function discoverResources(client, courses, graph, optional, { wind
       });
       graph.edge(root, node, "CONTAINS"); if (node) candidates.push(node);
     }
-    const rankedModules = window ? [...modules].sort((a, b) => {
-      const matches = (m) => { const range = moduleDateRange(m.name, window, course); return Number(Boolean(range && range.end >= window.start && range.start <= window.end)); };
-      return matches(b) - matches(a);
+    // A daily request needs the dated modules, not item lists for forty old weeks.
+    // This leaves the request/time budget available for linked documents.
+    const rankedModules = window ? modules.filter((m) => {
+      const range = moduleDateRange(m.name, window, course);
+      return range && range.end >= window.start && range.start <= window.end;
     }) : modules;
-    if (modules.length > 40) candidates.moduleCapReached = true;
+    if (rankedModules.length > 40) candidates.moduleCapReached = true;
     for (const module of rankedModules.slice(0, 40)) {
       if (module.published === false || module.workflow_state === "deleted") continue;
       const parent = graph.add("Module", course.id, module.id, { title: module.name, position: module.position }); graph.edge(root, parent, "CONTAINS");
@@ -37,7 +39,7 @@ export async function discoverResources(client, courses, graph, optional, { wind
           ? graph.add(item.type, course.id, remote, { title: item.title, moduleId: module.id }) : null;
         group.items.push({ ...item, resourceNode: target });
         graph.edge(child, target, "REFERENCES");
-        if (target && ["Page", "File"].includes(target.type) && !candidates.includes(target)) candidates.push(target);
+        if (target && !candidates.includes(target)) candidates.push(target);
       }
     }
   }

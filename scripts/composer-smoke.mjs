@@ -5,7 +5,7 @@ import path from "node:path";
 const original = "@Canvas fetch what I am gonna study today";
 const context = '{"records":[{"total":2,"title":"Today reading"}]}';
 const modes = [
-  "send", "review-first", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
+  "send", "hint-send", "rapid-send", "duplicate-script", "rollback-retry", "edited-attached", "new-invocation", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
   "form-submit", "paste-only", "rollback", "reject-rich", "no-send", "failure",
   "changed", "missing-runtime", "invalid-runtime", "invalidated", "disconnected"
 ];
@@ -25,7 +25,7 @@ try {
     );
     // Set up the page's handlers before the extension to reproduce capture-order bugs.
     await page.evaluate(({ mode, rich, context }) => {
-      globalThis.sent = 0; globalThis.calls = 0; globalThis.modelText = "";
+      globalThis.sent = 0; globalThis.calls = 0; globalThis.insertions = 0; globalThis.modelText = "";
       const input = document.querySelector("#prompt-textarea");
       const button = document.querySelector("#chat button");
       const text = () => rich ? input.innerText : input.value;
@@ -37,9 +37,10 @@ try {
       };
       input.addEventListener("input", () => {
         const next = text();
+        if (next.includes("<<< CANVAS LIVE DATA")) globalThis.insertions++;
         if (mode === "delayed-state" && next.includes("<<< CANVAS LIVE DATA")) {
           setTimeout(() => { globalThis.modelText = next; }, 180);
-        } else if (mode === "rollback" && next.includes("<<< CANVAS LIVE DATA")) {
+        } else if ((mode === "rollback" || mode === "rollback-retry" && globalThis.insertions === 1) && next.includes("<<< CANVAS LIVE DATA")) {
           const previous = globalThis.modelText;
           setTimeout(() => { input.value = previous; }, 60);
         } else globalThis.modelText = next;
@@ -63,7 +64,7 @@ try {
           globalThis.modelText = next;
         });
       }
-      if (mode === "no-send") button.disabled = true;
+      if (["no-send", "edited-attached"].includes(mode)) button.disabled = true;
       if (mode === "early-keydown") {
         document.addEventListener("keydown", (event) => {
           if (event.target === input && event.key === "Enter") {
@@ -92,6 +93,7 @@ try {
       } });
       globalThis.chrome = { runtime: { id: "fixture-extension", sendMessage: async () => {
         globalThis.calls++;
+        if (mode === "rapid-send") await new Promise((resolve) => setTimeout(resolve, 150));
         if (mode === "invalidated") throw new Error("Extension context invalidated.");
         if (mode === "disconnected") throw new Error("Could not establish connection. Receiving end does not exist.");
         if (mode === "changed") {
@@ -107,43 +109,57 @@ try {
     }, { mode, rich, context });
     await page.addScriptTag({ path: path.resolve("src/chatgpt/composer-adapter.js") });
     await page.addScriptTag({ path: path.resolve("src/content.js") });
+    if (mode === "duplicate-script") await page.addScriptTag({ path: path.resolve("src/content.js") });
     const input = page.locator("#prompt-textarea");
     await input.fill(original);
     await page.locator("#elsewhere").press("Enter");
     await page.locator("#other button").click();
     assert.equal(await page.evaluate(() => globalThis.calls), 0, mode + ": ignore other controls");
 
-    if (mode === "review-first") await page.getByRole("button", { name: "Fetch Canvas and attach context without sending" }).click();
+    if (mode === "hint-send") await page.getByRole("button", { name: "Fetch Canvas once and send" }).click();
+    else if (mode === "rapid-send") {
+      await input.press("Enter");
+      await page.locator("#chat button").click();
+      await input.press("Enter");
+    }
     else if (["early-pointerdown", "early-click"].includes(mode)) await page.locator("#chat button").click();
     else if (mode === "form-submit") await page.evaluate(() => document.querySelector("#chat").requestSubmit());
     else await input.press("Enter");
 
-    const success = ["send", "review-first", "delayed-state", "early-keydown", "early-pointerdown", "early-click", "form-submit", "paste-only"].includes(mode);
-    if (mode === "review-first") {
-      await page.waitForFunction(() => document.querySelector(".canvas-live-toast__message")?.textContent.includes("Review your draft"));
-      assert.equal(await page.evaluate(() => globalThis.sent), 0);
-      assert.ok((await input.inputValue()).includes(context));
-      await page.locator("#chat button").click();
-      assert.equal(await page.evaluate(() => globalThis.sent), 1);
-      assert.ok((await page.evaluate(() => globalThis.sentText)).includes(context));
-      assert.equal(await page.evaluate(() => globalThis.calls), 1);
-    } else if (success) {
+    const success = ["send", "hint-send", "rapid-send", "duplicate-script", "new-invocation", "delayed-state", "early-keydown", "early-pointerdown", "early-click", "form-submit", "paste-only"].includes(mode);
+    if (success) {
       await page.waitForFunction(() => globalThis.sent === 1);
       const sent = await page.evaluate(() => globalThis.sentText);
-      assert.ok(sent.startsWith(original + "\n"), mode);
+      assert.ok(sent.startsWith(original.replace(/@Canvas\s*/, "") + "\n"), mode);
+      assert.ok(!sent.includes("@Canvas"), mode + ": invocation tag is consumed");
       assert.ok(sent.includes(context), mode + ": complete context reaches send state");
       assert.ok(sent.includes("<<< END CANVAS LIVE DATA >>>"), mode);
       assert.equal(await page.evaluate(() => globalThis.calls), 1, mode);
       await page.waitForTimeout(100);
       assert.equal(await page.evaluate(() => globalThis.sent), 1, mode + ": no duplicate send");
-    } else if (mode === "no-send") {
-      await page.waitForFunction(() => document.querySelector(".canvas-live-toast__message")?.textContent.includes("Press Send"));
+      assert.equal((await input.inputValue().catch(() => input.innerText())).trim(), "", mode + ": sent context leaves no draft");
+      if (mode === "new-invocation") {
+        await input.fill(original);
+        await input.press("Enter");
+        await page.waitForFunction(() => globalThis.sent === 2);
+        assert.equal(await page.evaluate(() => globalThis.calls), 2, "a new tag/request gets fresh data once");
+      }
+    } else if (["no-send", "edited-attached"].includes(mode)) {
+      await page.waitForFunction(() => document.querySelector(".canvas-live-toast__message")?.textContent.includes("Send button is unavailable"));
       assert.ok((await input.inputValue()).includes(context));
+      if (mode === "edited-attached") await input.fill((await input.inputValue()) + "\nPlease summarize. @Canvas inside an attached prompt must not refetch.");
       await page.evaluate(() => document.querySelector("#chat button").disabled = false);
       await page.locator("#chat button").click();
       assert.equal(await page.evaluate(() => globalThis.sent), 1);
       assert.ok((await page.evaluate(() => globalThis.sentText)).includes(context));
       assert.equal(await page.evaluate(() => globalThis.calls), 1);
+    } else if (mode === "rollback-retry") {
+      await page.waitForFunction(() => document.querySelector(".canvas-live-toast")?.dataset.kind === "error");
+      assert.equal(await input.inputValue(), original);
+      await input.press("Enter");
+      await page.waitForFunction(() => globalThis.sent === 1);
+      assert.equal(await page.evaluate(() => globalThis.calls), 1, "an editor retry reuses the fetched response");
+      assert.ok((await page.evaluate(() => globalThis.sentText)).includes(context));
     } else {
       await page.waitForFunction(() => document.querySelector(".canvas-live-toast")?.dataset.kind === "error");
       assert.equal(await page.evaluate(() => globalThis.sent), 0, mode + ": unverified prompt must not send");
@@ -178,5 +194,5 @@ try {
     assert.deepEqual(errors, [], mode);
     await page.close();
   }
-  console.log("Composer integration passed: full context before send, delayed controlled state, earlier page capture handlers, pointer/click/form interception, paste-only rich editor, rollback/rejection without send, copy recovery, manual send, edited drafts, focus/form isolation and stale runtime recovery.");
+  console.log("Composer integration passed: one fetch/send per tag, consumed tag and empty sent draft, rapid input and duplicate installation, cached insertion retry, edited attached data without refetch, new invocation refresh, delayed editor state, pointer/click/form, rich paste, rejection/copy recovery and stale runtime.");
 } finally { await browser.close(); }

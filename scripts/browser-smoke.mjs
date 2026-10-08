@@ -106,6 +106,26 @@ try {
   assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
   const connection = await worker.evaluate(() => chrome.storage.local.get("lastConnection"));
   assert.equal(connection.lastConnection.transport, "canvas-tab");
+  const storageRequests = [];
+  await context.route("https://canvas.uva.nl/files/21/download", (route) => route.fulfill({ status: 302,
+    headers: { location: "https://instructure-uploads.s3.eu-central-1.amazonaws.com/notebook.ipynb?X-Amz-Signature=fixture" } }));
+  await context.route("https://instructure-uploads.s3.eu-central-1.amazonaws.com/**", (route) => {
+    storageRequests.push(route.request().headers());
+    return route.fulfill({ status: 200, contentType: "application/x-ipynb+json",
+      headers: { "access-control-allow-origin": "*" }, body: '{"cells":[{"cell_type":"markdown","source":["Selenium notebook source"]}]}' });
+  });
+  const recoveredFile = await worker.evaluate(async () => {
+    const { CanvasClient } = await import(chrome.runtime.getURL("src/canvas-client.js"));
+    const { createCanvasFetch } = await import(chrome.runtime.getURL("src/canvas-transport.js"));
+    const client = new CanvasClient({ token: "fixture-canvas-token", fetchImpl: createCanvasFetch() });
+    return [...await client.downloadFile({ id: 21, url: "https://canvas.uva.nl/files/21/download" })];
+  });
+  assert.ok(new TextDecoder().decode(new Uint8Array(recoveredFile)).includes("Selenium notebook source"));
+  assert.equal(storageRequests.length, 1);
+  assert.equal(storageRequests[0].authorization, undefined, "native cross-origin redirect strips the bearer token");
+  assert.equal(storageRequests[0].cookie, undefined);
+  assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
+  await context.unroute("https://instructure-uploads.s3.eu-central-1.amazonaws.com/**");
   await canvasTab.close();
   await context.unroute("https://canvas.uva.nl/**");
   await page.locator("#test").click();
@@ -114,7 +134,9 @@ try {
   for (const [filename, bytes, expected] of [
     ["Manual.pdf", pdfBytes(), "40 percent"],
     ["Requirements.docx", zipSync({ "word/document.xml": strToU8('<w:document xmlns:w="w"><w:t>Individual evidence</w:t></w:document>') }), "Individual evidence"],
-    ["Slides.pptx", zipSync({ "ppt/slides/slide1.xml": strToU8('<p:sld xmlns:p="p" xmlns:a="a"><a:t>Grading criteria</a:t></p:sld>') }), "Grading criteria"]
+    ["Slides.pptx", zipSync({ "ppt/slides/slide1.xml": strToU8('<p:sld xmlns:p="p" xmlns:a="a"><a:t>Grading criteria</a:t></p:sld>') }), "Grading criteria"],
+    ["Exercise.ipynb", strToU8('{"cells":[{"cell_type":"markdown","source":["Notebook requirements"]},{"cell_type":"code","source":["from selenium import webdriver"],"outputs":[]}]}'), "Notebook requirements"],
+    ["Environment.yaml", strToU8("name: selenium_practice\ndependencies:\n  - selenium"), "selenium_practice"]
   ]) {
     await worker.evaluate(({ filename, bytes }) => {
       globalThis.fetch = async (input) => {
@@ -204,13 +226,12 @@ try {
   assert.ok(enrichedStudy.includes("<<< END CANVAS LIVE DATA >>>"));
   assert.equal(await chatgpt.evaluate(() => window.sent), 1);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 1);
-  // The visible Fetch Canvas action attaches verified evidence for review, without sending.
+  assert.ok(enrichedStudy.startsWith("fetch what I'm gonna study today"));
+  assert.ok(!enrichedStudy.includes("@Canvas"));
+  assert.equal((await chatgpt.locator("#prompt-textarea").innerText()).trim(), "");
+  // The visible action also fetches and sends once, without a review draft.
   await chatgpt.locator("#prompt-textarea").fill("@Canvas fetch what I'm gonna learn todaay");
-  await chatgpt.getByRole("button", { name: "Fetch Canvas and attach context without sending" }).click();
-  await chatgpt.locator(".canvas-live-toast__message").filter({ hasText: "Review your draft" }).waitFor();
-  assert.equal(await chatgpt.evaluate(() => window.sent), 1);
-  assert.ok((await chatgpt.locator("#prompt-textarea").innerText()).includes("Today reading: validate data provenance"));
-  await chatgpt.locator('[data-testid="send-button"]').click();
+  await chatgpt.getByRole("button", { name: "Fetch Canvas once and send" }).click();
   await chatgpt.waitForFunction(() => window.sent === 2);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 2);
   assert.ok((await chatgpt.evaluate(() => window.sentText)).includes("<<< END CANVAS LIVE DATA >>>"));
@@ -240,7 +261,7 @@ try {
     await composer.close();
   }
 
-  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, actual MV3-to-GPT-OSS module/day retrieval with genuine ProseMirror and review/send, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
+  console.log("Browser smoke passed: actual MV3-to-GPT-OSS module/day retrieval and one-shot Send in genuine ProseMirror, isolated Canvas-tab API/file HTTPS fallback, real signed S3 redirect with no bearer/cookies, local PDF/DOCX/PPTX/notebook/YAML parsing, settings and composer adapters.");
 } finally {
   await context.close();
 }

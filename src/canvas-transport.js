@@ -1,4 +1,4 @@
-import { CanvasApiError } from "./canvas-client.js";
+import { CanvasApiError, fileDestination } from "./canvas-client.js";
 
 const BASE = "https://canvas.uva.nl";
 const API_BYTE_LIMIT = 4 * 1024 * 1024;
@@ -8,12 +8,23 @@ const API_BYTE_LIMIT = 4 * 1024 * 1024;
 export async function fetchCanvasInTab({ url, authorization, deadline, maxBytes }) {
   let target;
   try { target = new URL(url); } catch { return { error: "destination" }; }
+  const api = target.pathname.startsWith("/api/v1/");
+  const filePath = /^\/(?:courses\/\d+\/)?files\/\d+(?:\/download)?\/?$/;
+  const validFile = (value) => {
+    const signed = value.searchParams.has("X-Amz-Signature") ||
+      (value.searchParams.has("Signature") && (value.searchParams.has("AWSAccessKeyId") || value.searchParams.has("Key-Pair-Id")));
+    return value.protocol === "https:" && !value.port && !value.username && !value.password &&
+      (value.origin === "https://canvas.uva.nl" && filePath.test(value.pathname) ||
+       /^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(value.hostname) && signed ||
+       /^[a-z0-9-]+\.cloudfront\.net$/.test(value.hostname) && signed ||
+       /^(?:[a-z0-9-]+\.)+canvas-user-content\.com$/.test(value.hostname));
+  };
   if (location.origin !== "https://canvas.uva.nl" ||
       target.origin !== location.origin || target.username || target.password ||
-      !target.pathname.startsWith("/api/v1/") ||
+      !(api || filePath.test(target.pathname)) ||
       typeof authorization !== "string" || !authorization.startsWith("Bearer ") ||
       !Number.isFinite(deadline) || !Number.isInteger(maxBytes) ||
-      maxBytes < 0 || maxBytes > 4 * 1024 * 1024) {
+      maxBytes < 0 || maxBytes > (api ? 4 : 16) * 1024 * 1024) {
     return { error: "destination" };
   }
   if (Date.now() >= deadline) return { error: "timeout" };
@@ -22,9 +33,9 @@ export async function fetchCanvasInTab({ url, authorization, deadline, maxBytes 
   try {
     const response = await fetch(target.href, {
       method: "GET",
-      headers: { Authorization: authorization, Accept: "application/json" },
+      headers: { Authorization: authorization, Accept: api ? "application/json" : "*/*" },
       credentials: "omit",
-      redirect: "manual",
+      redirect: api ? "manual" : "follow",
       cache: "no-store",
       signal: controller.signal
     });
@@ -33,7 +44,7 @@ export async function fetchCanvasInTab({ url, authorization, deadline, maxBytes 
       await response.body?.cancel();
       return { error: "redirect" };
     }
-    if (response.url && new URL(response.url).origin !== target.origin) {
+    if (response.url && (api ? new URL(response.url).origin !== target.origin : !validFile(new URL(response.url)))) {
       await response.body?.cancel();
       return { error: "destination" };
     }
@@ -76,7 +87,7 @@ export async function fetchCanvasInTab({ url, authorization, deadline, maxBytes 
     const bytes = new Uint8Array(size);
     let offset = 0;
     for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-    return { status: response.status, url: target.href, headers, bytes: Array.from(bytes) };
+    return { status: response.status, url: response.url || target.href, headers, bytes: Array.from(bytes) };
   } catch (error) {
     return { error: error?.name === "AbortError" ? "timeout" : "network" };
   } finally { clearTimeout(timer); }
@@ -103,8 +114,11 @@ export function createCanvasFetch({ fetchImpl = fetch, chromeApi = globalThis.ch
   let tabId = null;
   const transport = async (input, init = {}) => {
     const url = new URL(input);
+    const api = url.pathname.startsWith("/api/v1/");
     const eligible = url.origin === BASE && !url.username && !url.password &&
-      url.pathname.startsWith("/api/v1/") && init.method === "GET";
+      (api || /^\/(?:courses\/\d+\/)?files\/\d+(?:\/download)?\/?$/.test(url.pathname)) && init.method === "GET";
+    const byteLimit = Math.max(0, Math.min(api ? API_BYTE_LIMIT : 16 * 1024 * 1024,
+      Number.isInteger(init.canvasMaxBytes) ? init.canvasMaxBytes : api ? API_BYTE_LIMIT : 16 * 1024 * 1024));
     const deadline = Date.now() + Math.min(15000, timeoutMs);
     const readInTab = async () => {
       if (!chromeApi?.scripting?.executeScript || !chromeApi?.tabs?.query) {
@@ -134,7 +148,7 @@ export function createCanvasFetch({ fetchImpl = fetch, chromeApi = globalThis.ch
             url: url.href,
             authorization: init.headers.Authorization,
             deadline,
-            maxBytes: API_BYTE_LIMIT
+            maxBytes: byteLimit
           }]
         });
       } catch {
@@ -152,9 +166,11 @@ export function createCanvasFetch({ fetchImpl = fetch, chromeApi = globalThis.ch
         };
         throw new CanvasApiError(messages[result.error] || "Canvas tab request failed.");
       }
+      let validUrl = false;
+      try { validUrl = api ? result?.url === url.href : Boolean(fileDestination(result?.url)); } catch {}
       if (!result || !Number.isInteger(result.status) || result.status < 200 ||
-          result.status > 599 || result.url !== url.href || !Array.isArray(result.bytes) ||
-          result.bytes.length > API_BYTE_LIMIT) {
+          result.status > 599 || !validUrl || !Array.isArray(result.bytes) ||
+          result.bytes.length > byteLimit) {
         throw new CanvasApiError("Invalid Canvas tab response.");
       }
       const response = new Response([204, 205, 304].includes(result.status) ? null : new Uint8Array(result.bytes), {

@@ -4,7 +4,8 @@ import { selectCourses } from "./course-scope.js";
 import { ResourceGraph } from "./resource-graph.js";
 import { discoverResources } from "./resource-discovery.js";
 import { resourceScore } from "./resource-ranker.js";
-import { readableText, discoverLinks } from "./html.js";
+import { readableText, discoverLinks, descriptionLinks } from "./html.js";
+import { CanvasApiError } from "../canvas-client.js";
 import { assignmentSummary, rubricSummary, excerpts } from "../context/serializers.js";
 import { budgetContext } from "../context/budget.js";
 import { redact } from "../privacy/redact.js";
@@ -19,9 +20,12 @@ export async function executePlan({ query, plan: proposed, client, settings, par
   const started = Date.now(), deadline = started + 120000;
   const maxResources = Math.min(plan.max_resources, settings.maxResources), maxDepth = Math.min(plan.max_depth, settings.maxDepth);
   let textRemaining = 200000, fileBytesRemaining = 24 * 1024 * 1024;
+  const fileResults = [];
+  const errorReason = (error) => error instanceof CanvasApiError ? error.message :
+    error?.message === "Request time budget reached" ? error.message : "Resource read failed";
   const optional = async (label, work, fallback = null) => {
     try { if (Date.now() > deadline) throw new Error("Request time budget reached"); return await work(); }
-    catch (error) { warnings.push(`${label}: ${error.status ? `HTTP ${error.status}` : "unavailable or limit reached"}`); return fallback; }
+    catch (error) { warnings.push(`${label}: ${error.status ? `HTTP ${error.status}` : errorReason(error)}`); return fallback; }
   };
   const allCourses = await client.getActiveCourses();
   const scope = selectCourses(query, allCourses, plan, settings, now);
@@ -76,12 +80,15 @@ export async function executePlan({ query, plan: proposed, client, settings, par
     const links = discoverLinks(html, node, graph, client.baseUrl, allowed);
     if (depth < maxDepth) for (const link of links) queue.push({ node: link, depth: depth + 1, related: true });
     else if (links.length) warnings.push("Relationship depth limit reached.");
-    return links.map((link) => ({ id: link.local_id, type: link.type, title: link.title }));
+    return links.map((link) => ({ id: link.local_id, type: link.type, title: link.title,
+      url: `${client.baseUrl}/courses/${link.courseId}/${{ File: "files", Page: "pages", Assignment: "assignments" }[link.type]}/${encodeURIComponent(link.remoteId)}` }));
   }
   function addText(kind, node, text, priority, extra = {}) {
     const bounded = String(text || "").slice(0, textRemaining); textRemaining -= bounded.length;
-    for (const chunk of excerpts(bounded, query)) records.push({ kind, priority, resource: node.title, resource_id: node.local_id,
-      type: node.type.toLowerCase(), course_id: node.courseId, ...chunk, ...extra });
+    const { links, linked_resources, ...details } = extra;
+    for (const [index, chunk] of excerpts(bounded, query).entries()) records.push({ kind, priority: index ? Math.min(priority, 65) : priority,
+      resource: node.title, resource_id: node.local_id, type: node.type.toLowerCase(), course_id: node.courseId,
+      ...chunk, ...details, ...(index ? {} : { links, linked_resources }) });
   }
   if (ops.has("get_calendar_events")) {
     const op = plan.operations.find((item) => item.type === "get_calendar_events");
@@ -117,6 +124,8 @@ export async function executePlan({ query, plan: proposed, client, settings, par
     const links = queueLinks(full.description, node, depth);
     records.push({ kind: "assignment_detail", priority: 94, course: course.name, ...assignmentSummary(full),
       description: settings.includeDescriptions ? excerpts(readableText(full.description), query) : [], linked_resources: links,
+      url: `${client.baseUrl}/courses/${course.id}/assignments/${full.id}`,
+      links: descriptionLinks(full.description, client.baseUrl, course.id),
       group_category_id: full.group_category_id || null, submission_types: full.submission_types || [],
       description_missing: !full.description });
     if (ops.has("get_rubric")) {
@@ -141,7 +150,9 @@ export async function executePlan({ query, plan: proposed, client, settings, par
   const relatedDiscovery = plan.follow_links && maxDepth > 0 && selected.length > 0 && queue.length === 0;
   const discovery = relatedDiscovery || ["list_files", "get_file", "get_page", "list_modules"].some((op) => ops.has(op));
   let candidates = [];
-  if (discovery) candidates = await discoverResources(client, courses, graph, optional, { window: study ? requestedWindow : null });
+  if (discovery) candidates = await discoverResources(client, courses, graph, optional, { window: study ? requestedWindow : null,
+    includeFiles: !study || ops.has("list_files") || plan.resource_queries.length > 0,
+    includePages: !study || plan.resource_queries.length > 0 });
   if (candidates.moduleCapReached) warnings.push("Module metadata cap reached; date-matched modules were prioritized.");
   const schedule = study ? selectModuleSchedule(candidates.moduleGroups || [], requestedWindow) : { schedules: [], resources: new Set() };
   records.push(...schedule.schedules);
@@ -160,36 +171,64 @@ export async function executePlan({ query, plan: proposed, client, settings, par
   }
   for (const candidate of candidates.filter((c) => c.score >= 2 &&
     (!study || schedule.resources.has(c.node.local_id) || plan.resource_queries.length > 0) &&
-    ((c.node.type === "File" && (ops.has("get_file") || relatedDiscovery)) || (c.node.type === "Page" && (ops.has("get_page") || relatedDiscovery)))).slice(0, 6)) queue.push({ ...candidate, depth: 0, related: schedule.resources.has(candidate.node.local_id) });
+    ((c.node.type === "File" && (ops.has("get_file") || relatedDiscovery)) || (c.node.type === "Page" && (ops.has("get_page") || relatedDiscovery)) ||
+     (c.node.type === "Assignment" && schedule.resources.has(c.node.local_id) && plan.follow_links))).slice(0, study ? maxResources : 6)) queue.push({ ...candidate, depth: 0, related: schedule.resources.has(candidate.node.local_id) });
   for (let index = 0; index < queue.length; index++) {
     // Newly discovered linked resources take priority over generic file candidates.
     queue.splice(index, queue.length - index, ...queue.slice(index).sort((a, b) => Number(b.related) - Number(a.related) || a.depth - b.depth));
     const { node, depth, related } = queue[index];
     if (visited.has(node.local_id) || depth > maxDepth) continue;
-    if (stats.resourcesFetched >= maxResources || !textRemaining || Date.now() > deadline) { warnings.push("Retrieval budget reached."); break; }
+    if (stats.resourcesFetched >= maxResources || !textRemaining || Date.now() > deadline) {
+      warnings.push("Retrieval budget reached.");
+      for (const item of queue.slice(index)) if (item.node.type === "File" && !visited.has(item.node.local_id) &&
+          !fileResults.some((record) => record.resource_id === item.node.local_id)) fileResults.push({ kind: "file_detail", priority: 91,
+        resource: item.node.title, resource_id: item.node.local_id, status: "not_read", reason: "Retrieval budget reached",
+        url: `${client.baseUrl}/courses/${item.node.courseId}/files/${item.node.remoteId}` });
+      break;
+    }
     visited.add(node.local_id); stats.resourcesFetched++;
     await optional(`${node.type} ${node.local_id}`, async () => {
       if (node.type === "Page") {
         const page = await client.getPage(node.courseId, node.remoteId); node.title = page.title || node.title;
+        const links = queueLinks(page.body, node, depth);
         addText("resource_excerpt", node, readableText(page.body), related ? 95 : 70, {
           url: `${client.baseUrl}/courses/${node.courseId}/pages/${encodeURIComponent(node.remoteId)}`,
-          module_id: node.moduleId }); queueLinks(page.body, node, depth);
+          module_id: node.moduleId, linked_resources: links, links: descriptionLinks(page.body, client.baseUrl, node.courseId) });
       } else if (node.type === "File") {
-        const file = await client.getFile(node.courseId, node.remoteId);
+        const detail = { kind: "file_detail", priority: 91, resource: node.title, resource_id: node.local_id,
+          course_id: node.courseId, id: Number(node.remoteId), status: "failed", stage: "metadata",
+          url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` };
+        fileResults.push(detail);
+        try {
+        const file = await client.getFile(node.courseId, node.remoteId, node);
+        detail.filename = file.filename || file.display_name || node.filename || node.title;
+        detail.content_type = file["content-type"]; detail.size = file.size; detail.stage = "download";
         const bytes = await client.downloadFile(file, Math.min(settings.maxDocumentBytes, fileBytesRemaining)); fileBytesRemaining -= bytes.length;
+        detail.stage = "parse";
         const parsed = await parseDocument({ filename: file.filename || file.display_name, contentType: file["content-type"] || "", bytes, maxBytes: settings.maxDocumentBytes, maxText: textRemaining });
-        if (parsed.metadata?.error) { warnings.push(`${node.title}: ${parsed.metadata.error}`); return; }
+        if (parsed.metadata?.error) { detail.reason = parsed.metadata.error; warnings.push(`${node.title}: ${parsed.metadata.error}`); return; }
+        detail.status = parsed.text?.trim() ? "read" : "no_text"; detail.type = parsed.type;
+        detail.bytes = bytes.length; detail.document_truncated = Boolean(parsed.truncated);
+        if (parsed.metadata?.warning) detail.reason = parsed.metadata.warning;
         stats.documentsParsed++;
         addText("resource_excerpt", node, parsed.text, related ? 94 : 75, { type: parsed.type, document_truncated: parsed.truncated,
           module_id: node.moduleId,
           url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` });
         if (parsed.metadata?.warning) warnings.push(`${node.title}: ${parsed.metadata.warning}`);
         if (parsed.type === "html") queueLinks(new TextDecoder().decode(bytes), node, depth);
+        } catch (error) { detail.reason = errorReason(error); detail.http_status = error.status || undefined; throw error; }
       } else if (node.type === "Assignment") {
         await assignmentDetail({ node, course: courses.find((c) => String(c.id) === String(node.courseId)), assignment: { id: node.remoteId } }, depth);
       }
     });
   }
+  records.push(...fileResults);
+  if (fileResults.length) records.push({ kind: "file_summary", priority: 99,
+    total: fileResults.length, read: fileResults.filter((file) => file.status === "read").length,
+    failed: fileResults.filter((file) => file.status === "failed" || file.status === "no_text").length,
+    not_read: fileResults.filter((file) => file.status === "not_read").length,
+    complete: fileResults.every((file) => file.status === "read") && !warnings.some((warning) => /Retrieval budget|Relationship depth limit/.test(warning)),
+    scope: "Discovered linked files within selected resources and relationship limits; text excerpts may be truncated or omitted by the context budget." });
   const extras = [];
   if (study) records.push({ kind: "study_summary", priority: 99,
     window: { label: requestedWindow.label, start_date: dateKey(requestedWindow.start), end_date: dateKey(requestedWindow.end), time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone },

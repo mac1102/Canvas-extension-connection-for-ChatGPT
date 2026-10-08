@@ -6,7 +6,9 @@ export function detectDocumentType(filename = "", contentType = "", bytes = new 
   if (new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-" || ext === "pdf" || mime === "application/pdf") return "pdf";
   if (ext === "docx" || mime.includes("wordprocessingml")) return "docx";
   if (ext === "pptx" || mime.includes("presentationml")) return "pptx";
-  if (["txt", "md", "markdown", "html", "htm", "csv", "json", "xml"].includes(ext)) return ext === "htm" ? "html" : ext;
+  if (["txt", "md", "markdown", "html", "htm", "csv", "json", "xml", "ipynb", "yaml", "yml", "py", "sql", "r"].includes(ext)) return ext === "htm" ? "html" : ext === "yml" ? "yaml" : ext;
+  if (mime === "application/x-ipynb+json") return "ipynb";
+  if (["application/yaml", "application/x-yaml", "text/yaml", "text/x-yaml"].includes(mime)) return "yaml";
   return ({ "text/plain": "txt", "text/markdown": "md", "text/html": "html", "text/csv": "csv", "application/json": "json", "application/xml": "xml", "text/xml": "xml" })[mime] || "unsupported";
 }
 export async function parseDocument({ filename = "", contentType = "", bytes, maxBytes = 8 * 1024 * 1024, maxText = 200000, pdfParser } = {}) {
@@ -43,6 +45,24 @@ export async function parseDocument({ filename = "", contentType = "", bytes, ma
     } else {
       let text = new TextDecoder("utf-8", { fatal: true }).decode(data);
       if (type === "html") text = readableText(text);
+      if (type === "ipynb") {
+        const notebook = JSON.parse(text);
+        if (!Array.isArray(notebook.cells) || notebook.cells.length > 10000) throw new Error("Invalid notebook or cell limit");
+        const parts = []; let length = 0;
+        for (let index = 0; index < notebook.cells.length; index++) {
+          const cell = notebook.cells[index];
+          if (!["markdown", "code", "raw"].includes(cell.cell_type)) continue;
+          const source = Array.isArray(cell.source) ? cell.source.join("") : cell.source;
+          if (typeof source !== "string") throw new Error("Invalid notebook source");
+          const section = `Cell ${index + 1} (${cell.cell_type})\n${source}\n`;
+          result.sections.push({ title: `Cell ${index + 1} (${cell.cell_type})`, offset: length });
+          parts.push(section.slice(0, Math.max(0, maxText - length))); length += section.length;
+          if (length >= maxText) { result.truncated = true; break; }
+        }
+        // Source is data only. Never execute code or embed stored outputs/images.
+        text = parts.join("\n");
+        result.metadata.cells = notebook.cells.length;
+      }
       if (type === "json") text = JSON.stringify(JSON.parse(text), null, 2);
       if (type === "xml") {
         if (/<!DOCTYPE|<!ENTITY/i.test(text)) throw new Error("XML entities are unsupported");
