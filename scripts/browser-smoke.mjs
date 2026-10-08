@@ -114,18 +114,28 @@ try {
     return route.fulfill({ status: 200, contentType: "application/x-ipynb+json",
       headers: { "access-control-allow-origin": "*" }, body: '{"cells":[{"cell_type":"markdown","source":["Selenium notebook source"]}]}' });
   });
-  const recoveredFile = await worker.evaluate(async () => {
-    const { CanvasClient } = await import(chrome.runtime.getURL("src/canvas-client.js"));
-    const { createCanvasFetch } = await import(chrome.runtime.getURL("src/canvas-transport.js"));
-    const client = new CanvasClient({ token: "fixture-canvas-token", fetchImpl: createCanvasFetch() });
-    return [...await client.downloadFile({ id: 21, url: "https://canvas.uva.nl/files/21/download" })];
+  await worker.evaluate(() => {
+    globalThis.fetch = async (input) => {
+      const url = new URL(input), json = (value) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+      if (url.hostname === "api.groq.com") return new Response("", { status: 500 });
+      if (url.pathname === "/files/21/download") throw new TypeError("Worker download failure");
+      if (url.pathname === "/api/v1/courses") return json([{ id: 1, name: "CONNECTIONS" }]);
+      if (url.pathname === "/api/v1/courses/1/files") return json([{ id: 21, filename: "Exercise.ipynb", display_name: "Course Manual" }]);
+      if (url.pathname === "/api/v1/courses/1/files/21") return json({ id: 21, filename: "Exercise.ipynb", url: "https://canvas.uva.nl/files/21/download" });
+      if (url.pathname === "/api/v1/courses/1") return json({});
+      return json([]);
+    };
   });
-  assert.ok(new TextDecoder().decode(new Uint8Array(recoveredFile)).includes("Selenium notebook source"));
+  const recoveredFile = await page.evaluate(() => chrome.runtime.sendMessage({ type: "FETCH_CANVAS_CONTEXT", query: "@Canvas course manual CONNECTIONS" }));
+  assert.ok(recoveredFile.ok && recoveredFile.context.includes("Selenium notebook source"), JSON.stringify(recoveredFile));
+  assert.equal(recoveredFile.meta.documentsParsed, 1);
   assert.equal(storageRequests.length, 1);
   assert.equal(storageRequests[0].authorization, undefined, "native cross-origin redirect strips the bearer token");
   assert.equal(storageRequests[0].cookie, undefined);
   assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
   await context.unroute("https://instructure-uploads.s3.eu-central-1.amazonaws.com/**");
+  await context.unroute("https://canvas.uva.nl/files/21/download");
+  await worker.evaluate(() => { globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); }; });
   await canvasTab.close();
   await context.unroute("https://canvas.uva.nl/**");
   await page.locator("#test").click();
