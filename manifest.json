@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Canvas Live for ChatGPT",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Fetch fresh Canvas LMS context when you invoke @Canvas in ChatGPT.",
   "minimum_chrome_version": "140",
   "permissions": [
@@ -11,7 +11,10 @@
   ],
   "host_permissions": [
     "https://canvas.uva.nl/*",
-    "https://api.groq.com/*"
+    "https://api.groq.com/*",
+    "https://*.amazonaws.com/*",
+    "https://*.cloudfront.net/*",
+    "https://*.canvas-user-content.com/*"
   ],
   "background": {
     "service_worker": "src/background.js",

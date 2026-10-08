@@ -9,7 +9,8 @@ test("manifest paths and permissions", () => {
   assert.equal(manifest.manifest_version, 3); assert.equal(manifest.background.type, "module");
   for (const file of [manifest.background.service_worker, manifest.action.default_popup, manifest.options_ui.page,
     ...manifest.content_scripts.flatMap((c) => [...c.js, ...c.css])]) assert.ok(fs.existsSync(new URL(file, root)), file);
-  assert.deepEqual(manifest.host_permissions, ["https://canvas.uva.nl/*", "https://api.groq.com/*"]);
+  assert.deepEqual(manifest.host_permissions, ["https://canvas.uva.nl/*", "https://api.groq.com/*",
+    "https://*.amazonaws.com/*", "https://*.cloudfront.net/*", "https://*.canvas-user-content.com/*"]);
 });
 test("worker, parser and UI module graphs resolve including named exports", async () => {
   for (const file of ["src/background.js", "src/parsers/worker.js", "src/parsers/offscreen.js", "options/options.js", "popup/popup.js"]) {

@@ -1,6 +1,23 @@
 const BASE = "https://canvas.uva.nl";
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 
+// Only Canvas API-issued file URLs reach this path. Storage requests never carry
+// the Canvas bearer token; signed URLs stay inside the worker, out of chat data.
+export function fileDestination(value) {
+  const url = new URL(value, BASE);
+  const signed = url.searchParams.has("X-Amz-Signature") ||
+    (url.searchParams.has("Signature") && (url.searchParams.has("AWSAccessKeyId") || url.searchParams.has("Key-Pair-Id")));
+  const storage = /^(?:[a-z0-9.-]+\.)?s3(?:[.-][a-z0-9-]+)?\.amazonaws\.com$/.test(url.hostname) && signed ||
+    /^[a-z0-9-]+\.cloudfront\.net$/.test(url.hostname) && signed ||
+    /^(?:[a-z0-9-]+\.)+canvas-user-content\.com$/.test(url.hostname);
+  const canvas = url.origin === BASE && /^\/(?:courses\/\d+\/)?files\/\d+(?:\/download)?\/?$/.test(url.pathname);
+  if (url.protocol !== "https:" || url.port || url.username || url.password || !(canvas || storage)) {
+    throw new CanvasApiError("Untrusted file destination.");
+  }
+  url.hash = "";
+  return url;
+}
+
 export class CanvasApiError extends Error {
   constructor(message, { status = null } = {}) {
     super(message);
@@ -94,25 +111,26 @@ export class CanvasClient {
     return url;
   }
 
-  async fetchTrusted(startUrl, { api, signal }) {
-    let url = this.url(startUrl, {}, api);
+  async fetchTrusted(startUrl, { api, signal, maxBytes }) {
+    let url = api ? this.url(startUrl) : fileDestination(startUrl);
     for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
       const response = await this.fetchImpl(url, {
         method: "GET",
-        headers: { Authorization: `Bearer ${this.token}`, Accept: api ? "application/json" : "*/*" },
+        headers: { ...(url.origin === BASE ? { Authorization: `Bearer ${this.token}` } : {}), Accept: api ? "application/json" : "*/*" },
         credentials: "omit",
-        redirect: "follow",
+        redirect: url.origin === BASE ? "follow" : "error",
         cache: "no-store",
+        canvasMaxBytes: maxBytes,
         signal
       });
 
       // Real browser fetch follows redirects natively. Validate the final URL before
       // consuming any response body. Fetch removes developer-set Authorization on a
-      // cross-origin redirect; we still reject any off-origin final response here.
+      // cross-origin redirect. APIs stay on Canvas; files may use signed storage.
       if (response.url) {
         let finalUrl;
         try {
-          finalUrl = this.url(response.url, {}, api);
+          finalUrl = api ? this.url(response.url) : fileDestination(response.url);
         } catch {
           await response.body?.cancel();
           throw new CanvasApiError("Canvas attempted an untrusted redirect. The request was blocked.", { status: response.status || null });
@@ -128,7 +146,7 @@ export class CanvasClient {
       if (!location) throw new CanvasApiError("Canvas returned a redirect without a destination.", { status: response.status });
       if (redirectCount >= 3) throw new CanvasApiError("Canvas redirect limit reached.", { status: response.status });
       try {
-        url = this.url(new URL(location, url), {}, api);
+        url = api ? this.url(new URL(location, url)) : fileDestination(new URL(location, url));
       } catch {
         throw new CanvasApiError("Canvas attempted an untrusted redirect. The request was blocked.", { status: response.status });
       }
@@ -137,7 +155,7 @@ export class CanvasClient {
   }
 
   async read(url, { api = true, maxBytes = 4 * 1024 * 1024 } = {}) {
-    const trustedUrl = this.url(url, {}, api);
+    const trustedUrl = api ? this.url(url) : fileDestination(url);
     if (this.rateLimited) throw new CanvasApiError("Canvas rate limit reached. Retry later.", { status: 429 });
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -145,7 +163,7 @@ export class CanvasClient {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), this.timeoutMs);
       try {
-        const { response } = await this.fetchTrusted(trustedUrl, { api, signal: controller.signal });
+        const { response } = await this.fetchTrusted(trustedUrl, { api, signal: controller.signal, maxBytes });
         if (!response.ok) {
           if (response.status === 429) this.rateLimited = true;
           if (response.status >= 500 && attempt === 0) {
@@ -235,14 +253,28 @@ export class CanvasClient {
   getPages(c) { return this.getAll(`/api/v1/courses/${id(c)}/pages`, { sort: "updated_at", order: "desc" }); }
   getPage(c, p) { return this.get(`/api/v1/courses/${id(c)}/pages/${slug(p)}`); }
   getFiles(c) { return this.getAll(`/api/v1/courses/${id(c)}/files`, { sort: "updated_at", order: "desc" }); }
-  async getFile(c, f) {
+  async getFile(c, f, hint = {}) {
     const courseId = id(c), fileId = id(f);
-    try { return await this.get(`/api/v1/courses/${courseId}/files/${fileId}`); }
+    const verifier = typeof hint.verifier === "string" && /^[a-zA-Z0-9_-]{1,512}$/.test(hint.verifier) ? hint.verifier : undefined;
+    const params = { use_verifiers: true, verifier };
+    try { return { ...await this.get(`/api/v1/courses/${courseId}/files/${fileId}`, params), link_verifier: verifier }; }
     catch (error) {
       if (![403, 404].includes(error.status)) throw error;
       // Module-linked files may be readable through the canonical Files API even
       // when the course Files tab/list is unavailable. Both paths use the token.
-      return this.get(`/api/v1/files/${fileId}`);
+      try { return { ...await this.get(`/api/v1/files/${fileId}`, params), link_verifier: verifier }; }
+      catch (canonicalError) {
+        if (![403, 404].includes(canonicalError.status)) throw canonicalError;
+        // Download permission can differ from metadata/list permission. Canvas
+        // checks access itself before issuing this short-lived storage URL.
+        const signed = await this.get(`/api/v1/files/${fileId}/public_url`, { verifier });
+        if (!signed?.public_url) throw new CanvasApiError("File has no download URL.");
+        const destination = fileDestination(signed.public_url);
+        let filename = "";
+        try { filename = decodeURIComponent(destination.pathname.split("/").at(-1)); } catch {}
+        return { id: Number(fileId), filename: /\.[a-z0-9]+$/i.test(filename) ? filename : hint.filename || hint.title || "",
+          url: signed.public_url, link_verifier: verifier, metadata_unavailable: true };
+      }
     }
   }
   getFolders(c) { return this.getAll(`/api/v1/courses/${id(c)}/folders`); }
@@ -276,11 +308,18 @@ export class CanvasClient {
   }
 
   async downloadFile(file, maxBytes = 8 * 1024 * 1024) {
-    if (file.locked_for_user || file.hidden_for_user) throw new CanvasApiError("File is locked or hidden.");
+    if (file.locked_for_user) throw new CanvasApiError("File is locked for this user.");
     if (file.size > maxBytes) throw new CanvasApiError("File exceeds document size limit.");
     if (!file.url) throw new CanvasApiError("File has no download URL.");
-    const url = this.url(file.url, {}, false);
-    if (!/^\/(?:courses\/\d+\/)?files\/\d+(?:\/download)?\/?$/.test(url.pathname)) throw new CanvasApiError("Unsupported file download path.");
-    return this.cached(`file:${url.href}`, async () => (await this.read(url, { api: false, maxBytes })).bytes);
+    const url = fileDestination(file.url);
+    return this.cached(`file:${file.id || url.href}`, async () => {
+      try { return (await this.read(url, { api: false, maxBytes })).bytes; }
+      catch (error) {
+        if (!file.id || [401, 429].includes(error.status) || /limit|locked/i.test(error.message)) throw error;
+        const signed = await this.get(`/api/v1/files/${id(file.id)}/public_url`, { verifier: file.link_verifier });
+        if (!signed?.public_url) throw error;
+        return (await this.read(fileDestination(signed.public_url), { api: false, maxBytes })).bytes;
+      }
+    });
   }
 }

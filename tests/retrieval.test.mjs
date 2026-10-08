@@ -88,7 +88,7 @@ test("Canvas retry is bounded; 429 blocks subsequent calls", async () => {
 });
 test("download enforces size, destination and redirect policy", async () => {
   let calls = 0;
-  const client = new CanvasClient({ token: "fake", fetchImpl: async (_, init) => { calls++; assert.equal(init.method, "GET"); assert.equal(init.redirect, "error"); return new Response("too big"); } });
+  const client = new CanvasClient({ token: "fake", fetchImpl: async (_, init) => { calls++; assert.equal(init.method, "GET"); assert.equal(init.redirect, "follow"); return new Response("too big"); } });
   await assert.rejects(client.downloadFile({ url: "https://evil.test/files/1" }));
   await assert.rejects(client.downloadFile({ url: "https://canvas.uva.nl/files/1", size: 100 }, 10));
   assert.equal(calls, 0);

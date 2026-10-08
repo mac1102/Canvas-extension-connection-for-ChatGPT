@@ -4,15 +4,37 @@ import path from "node:path";
 import { prosemirrorFixture } from "./prosemirror-fixture.mjs";
 import { pdfBytes } from "../tests/fixtures/canvas.mjs";
 import { zipSync, strToU8 } from "fflate";
+import fs from "node:fs";
+import os from "node:os";
+import https from "node:https";
+import { execFileSync } from "node:child_process";
+
+// Redirect hops bypass Playwright's per-URL route handler. Use real local HTTPS
+// for storage so native token stripping and CORS are genuinely exercised.
+const tlsDir = fs.mkdtempSync(path.join(os.tmpdir(), "canvas-file-https-"));
+execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", path.join(tlsDir, "key.pem"),
+  "-out", path.join(tlsDir, "cert.pem"), "-days", "1", "-subj", "/CN=canvas-fixture.s3.amazonaws.com"], { stdio: "ignore" });
+const storageRequests = [];
+const storageServer = https.createServer({ key: fs.readFileSync(path.join(tlsDir, "key.pem")), cert: fs.readFileSync(path.join(tlsDir, "cert.pem")) }, (request, response) => {
+  if (request.method === "GET") storageRequests.push(request.headers);
+  response.writeHead(200, { "content-type": "application/x-ipynb+json", "access-control-allow-origin": "*",
+    "access-control-allow-methods": "GET, OPTIONS", "access-control-allow-headers": "authorization" });
+  response.end('{"cells":[{"cell_type":"markdown","source":["Selenium notebook source"]}]}');
+});
+await new Promise((resolve) => storageServer.listen(0, "127.0.0.1", resolve));
+const storagePort = storageServer.address().port;
 
 const extension = process.cwd();
 const context = await chromium.launchPersistentContext("", {
   channel: "chromium",
   headless: true,
-  args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`]
+  args: [`--disable-extensions-except=${extension}`, `--load-extension=${extension}`, "--ignore-certificate-errors", "--no-proxy-server",
+    `--host-resolver-rules=MAP canvas-fixture.s3.amazonaws.com:443 127.0.0.1:${storagePort}`]
 });
 
 try {
+  // Test-only: the signed storage hostname maps to our loopback HTTPS fixture.
+  await context.grantPermissions(["local-network-access"], { origin: "https://canvas.uva.nl" });
   const worker = context.serviceWorkers()[0] || await context.waitForEvent("serviceworker", { timeout: 15000 });
   const id = new URL(worker.url()).host;
   const page = await context.newPage();
@@ -106,6 +128,34 @@ try {
   assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
   const connection = await worker.evaluate(() => chrome.storage.local.get("lastConnection"));
   assert.equal(connection.lastConnection.transport, "canvas-tab");
+  const fileFailures = [];
+  context.on("requestfailed", (request) => {
+    if (/files\/21|canvas-fixture\.s3/.test(request.url())) fileFailures.push({ host: new URL(request.url()).host, reason: request.failure()?.errorText });
+  });
+  canvasTab.on("console", (message) => { if (message.type() === "error") console.log("Canvas fixture console:", message.text()); });
+  await context.route("https://canvas.uva.nl/files/21/download", (route) => route.fulfill({ status: 302,
+    headers: { location: "https://canvas-fixture.s3.amazonaws.com/notebook.ipynb?X-Amz-Signature=fixture" } }));
+  await worker.evaluate(() => {
+    globalThis.fetch = async (input) => {
+      const url = new URL(input), json = (value) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+      if (url.hostname === "api.groq.com") return new Response("", { status: 500 });
+      if (url.pathname === "/files/21/download") throw new TypeError("Worker download failure");
+      if (url.pathname === "/api/v1/courses") return json([{ id: 1, name: "CONNECTIONS" }]);
+      if (url.pathname === "/api/v1/courses/1/files") return json([{ id: 21, filename: "Exercise.ipynb", display_name: "Course Manual" }]);
+      if (url.pathname === "/api/v1/courses/1/files/21") return json({ id: 21, filename: "Exercise.ipynb", url: "https://canvas.uva.nl/files/21/download" });
+      if (url.pathname === "/api/v1/courses/1") return json({});
+      return json([]);
+    };
+  });
+  const recoveredFile = await page.evaluate(() => chrome.runtime.sendMessage({ type: "FETCH_CANVAS_CONTEXT", query: "@Canvas course manual CONNECTIONS" }));
+  assert.ok(recoveredFile.ok && recoveredFile.context.includes("Selenium notebook source"), JSON.stringify({ result: recoveredFile, fileFailures, storageRequests }));
+  assert.equal(recoveredFile.meta.documentsParsed, 1);
+  assert.equal(storageRequests.length, 1);
+  assert.equal(storageRequests[0].authorization, undefined, "native cross-origin redirect strips the bearer token");
+  assert.equal(storageRequests[0].cookie, undefined);
+  assert.equal(await canvasTab.evaluate(() => window.pageFetchCalls), 0);
+  await context.unroute("https://canvas.uva.nl/files/21/download");
+  await worker.evaluate(() => { globalThis.fetch = async () => { throw new TypeError("Failed to fetch"); }; });
   await canvasTab.close();
   await context.unroute("https://canvas.uva.nl/**");
   await page.locator("#test").click();
@@ -114,7 +164,9 @@ try {
   for (const [filename, bytes, expected] of [
     ["Manual.pdf", pdfBytes(), "40 percent"],
     ["Requirements.docx", zipSync({ "word/document.xml": strToU8('<w:document xmlns:w="w"><w:t>Individual evidence</w:t></w:document>') }), "Individual evidence"],
-    ["Slides.pptx", zipSync({ "ppt/slides/slide1.xml": strToU8('<p:sld xmlns:p="p" xmlns:a="a"><a:t>Grading criteria</a:t></p:sld>') }), "Grading criteria"]
+    ["Slides.pptx", zipSync({ "ppt/slides/slide1.xml": strToU8('<p:sld xmlns:p="p" xmlns:a="a"><a:t>Grading criteria</a:t></p:sld>') }), "Grading criteria"],
+    ["Exercise.ipynb", strToU8('{"cells":[{"cell_type":"markdown","source":["Notebook requirements"]},{"cell_type":"code","source":["from selenium import webdriver"],"outputs":[]}]}'), "Notebook requirements"],
+    ["Environment.yaml", strToU8("name: selenium_practice\ndependencies:\n  - selenium"), "selenium_practice"]
   ]) {
     await worker.evaluate(({ filename, bytes }) => {
       globalThis.fetch = async (input) => {
@@ -204,13 +256,12 @@ try {
   assert.ok(enrichedStudy.includes("<<< END CANVAS LIVE DATA >>>"));
   assert.equal(await chatgpt.evaluate(() => window.sent), 1);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 1);
-  // The visible Fetch Canvas action attaches verified evidence for review, without sending.
+  assert.ok(enrichedStudy.startsWith("fetch what I'm gonna study today"));
+  assert.ok(!enrichedStudy.includes("@Canvas"));
+  assert.equal((await chatgpt.locator("#prompt-textarea").innerText()).trim(), "");
+  // The visible action also fetches and sends once, without a review draft.
   await chatgpt.locator("#prompt-textarea").fill("@Canvas fetch what I'm gonna learn todaay");
-  await chatgpt.getByRole("button", { name: "Fetch Canvas and attach context without sending" }).click();
-  await chatgpt.locator(".canvas-live-toast__message").filter({ hasText: "Review your draft" }).waitFor();
-  assert.equal(await chatgpt.evaluate(() => window.sent), 1);
-  assert.ok((await chatgpt.locator("#prompt-textarea").innerText()).includes("Today reading: validate data provenance"));
-  await chatgpt.locator('[data-testid="send-button"]').click();
+  await chatgpt.getByRole("button", { name: "Fetch Canvas once and send" }).click();
   await chatgpt.waitForFunction(() => window.sent === 2);
   assert.equal(await worker.evaluate(() => globalThis.studyPlannerCalls), 2);
   assert.ok((await chatgpt.evaluate(() => window.sentText)).includes("<<< END CANVAS LIVE DATA >>>"));
@@ -240,7 +291,9 @@ try {
     await composer.close();
   }
 
-  console.log("Browser smoke passed: MV3 worker, Canvas/Groq connection UI, actual MV3-to-GPT-OSS module/day retrieval with genuine ProseMirror and review/send, isolated Canvas-tab HTTPS fallback, safe redirects, settings save/remove, popup, PDF/DOCX/PPTX, composer adapters.");
+  console.log("Browser smoke passed: actual MV3-to-GPT-OSS module/day retrieval and one-shot Send in genuine ProseMirror, isolated Canvas-tab API/file HTTPS fallback, real signed S3 redirect with no bearer/cookies, local PDF/DOCX/PPTX/notebook/YAML parsing, settings and composer adapters.");
 } finally {
   await context.close();
+  await new Promise((resolve) => storageServer.close(resolve));
+  fs.rmSync(tlsDir, { recursive: true, force: true });
 }

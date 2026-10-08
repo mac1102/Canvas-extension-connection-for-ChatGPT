@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — 2026-10-08
+
+- Fetch and send once per invocation; consume the tag and reuse retrieved data after an editor retry. Replace the review-only action with Fetch & Send; attached/edited data blocks never refetch.
+- Restrict daily module discovery to matching dates so old week item lists and broad catalogs do not exhaust document retrieval budgets.
+- Preserve page/assignment descriptions and source links; read linked PDF/notebook/YAML/HTML resources with per-file status, failure stage and completeness records.
+- Support Canvas-issued signed S3/CloudFront and Canvas user-content file URLs without forwarding bearer tokens or cookies. Add authenticated public-URL fallback and bounded isolated-tab file transport. Storage host access is required; denied/locked resources remain unavailable.
+- Parse notebook markdown/code sources without execution or stored outputs, plus YAML and text source files.
+- Add seven-file retrieval regression, signed-host/authentication/limit coverage and one-shot composer/MV3 browser checks.
+
 ## 0.3.0 — 2026-10-08
 
 - Select learning topics from explicit module date ranges and weekday sections, preserving module/item IDs, source links, resource types and incomplete evidence. Never infer class times or rooms from module titles.
