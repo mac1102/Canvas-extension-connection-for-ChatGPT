@@ -5,7 +5,7 @@ import path from "node:path";
 const original = "@Canvas fetch what I am gonna study today";
 const context = '{"records":[{"total":2,"title":"Today reading"}]}';
 const modes = [
-  "send", "hint-send", "rapid-send", "duplicate-script", "rollback-retry", "edited-attached", "new-invocation", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
+  "send", "hint-send", "rapid-send", "duplicate-script", "rollback-retry", "send-rollback", "edited-attached", "new-invocation", "delayed-state", "early-keydown", "early-pointerdown", "early-click",
   "form-submit", "paste-only", "rollback", "reject-rich", "no-send", "failure",
   "changed", "missing-runtime", "invalid-runtime", "invalidated", "disconnected"
 ];
@@ -30,6 +30,15 @@ try {
       const button = document.querySelector("#chat button");
       const text = () => rich ? input.innerText : input.value;
       const commit = () => {
+        if (mode === "send-rollback" && !globalThis.rejectedSend) {
+          globalThis.rejectedSend = true;
+          setTimeout(() => {
+            input.value = globalThis.draftText;
+            globalThis.modelText = input.value;
+            input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+          }, 60);
+          return;
+        }
         globalThis.sent++;
         globalThis.sentText = globalThis.modelText;
         if (rich) input.replaceChildren(); else input.value = "";
@@ -37,6 +46,7 @@ try {
       };
       input.addEventListener("input", () => {
         const next = text();
+        if (!next.includes("<<< CANVAS LIVE DATA")) globalThis.draftText = next;
         if (next.includes("<<< CANVAS LIVE DATA")) globalThis.insertions++;
         if (mode === "delayed-state" && next.includes("<<< CANVAS LIVE DATA")) {
           setTimeout(() => { globalThis.modelText = next; }, 180);
@@ -153,7 +163,7 @@ try {
       assert.equal(await page.evaluate(() => globalThis.sent), 1);
       assert.ok((await page.evaluate(() => globalThis.sentText)).includes(context));
       assert.equal(await page.evaluate(() => globalThis.calls), 1);
-    } else if (mode === "rollback-retry") {
+    } else if (["rollback-retry", "send-rollback"].includes(mode)) {
       await page.waitForFunction(() => document.querySelector(".canvas-live-toast")?.dataset.kind === "error");
       assert.equal(await input.inputValue(), original);
       await input.press("Enter");

@@ -166,10 +166,14 @@
         const until = performance.now() + 1800;
         while (performance.now() < until) {
           const live = findComposer();
-          if (!live || !sameComposerText(getComposerText(live), state.armedText)) {
+          const liveText = live ? getComposerText(live) : "";
+          if (!live || !liveText.trim()) {
             state.pendingPrompt = null; state.armedText = null; state.request = null;
             hideToast(); return;
           }
+          // A nonempty rollback is a rejected/changed draft, not confirmation
+          // that Send succeeded. Keep the result so retrying cannot refetch.
+          if (!sameComposerText(liveText, enriched)) break;
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
         showToast("Canvas was fetched once, but ChatGPT kept the draft. Press Send to retry without fetching again.", "error", 12000);
