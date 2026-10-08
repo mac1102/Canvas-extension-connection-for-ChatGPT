@@ -200,22 +200,22 @@ export async function executePlan({ query, plan: proposed, client, settings, par
           url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` };
         fileResults.push(detail);
         try {
-        const file = await client.getFile(node.courseId, node.remoteId, node);
-        detail.filename = file.filename || file.display_name || node.filename || node.title;
-        detail.content_type = file["content-type"]; detail.size = file.size; detail.stage = "download";
-        const bytes = await client.downloadFile(file, Math.min(settings.maxDocumentBytes, fileBytesRemaining)); fileBytesRemaining -= bytes.length;
-        detail.stage = "parse";
-        const parsed = await parseDocument({ filename: file.filename || file.display_name, contentType: file["content-type"] || "", bytes, maxBytes: settings.maxDocumentBytes, maxText: textRemaining });
-        if (parsed.metadata?.error) { detail.reason = parsed.metadata.error; warnings.push(`${node.title}: ${parsed.metadata.error}`); return; }
-        detail.status = parsed.text?.trim() ? "read" : "no_text"; detail.type = parsed.type;
-        detail.bytes = bytes.length; detail.document_truncated = Boolean(parsed.truncated);
-        if (parsed.metadata?.warning) detail.reason = parsed.metadata.warning;
-        stats.documentsParsed++;
-        addText("resource_excerpt", node, parsed.text, related ? 94 : 75, { type: parsed.type, document_truncated: parsed.truncated,
-          module_id: node.moduleId,
-          url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` });
-        if (parsed.metadata?.warning) warnings.push(`${node.title}: ${parsed.metadata.warning}`);
-        if (parsed.type === "html") queueLinks(new TextDecoder().decode(bytes), node, depth);
+          const file = await client.getFile(node.courseId, node.remoteId, node);
+          detail.filename = file.filename || file.display_name || node.filename || node.title;
+          detail.content_type = file["content-type"]; detail.size = file.size; detail.stage = "download";
+          const bytes = await client.downloadFile(file, Math.min(settings.maxDocumentBytes, fileBytesRemaining)); fileBytesRemaining -= bytes.length;
+          detail.stage = "parse";
+          const parsed = await parseDocument({ filename: file.filename || file.display_name, contentType: file["content-type"] || "", bytes, maxBytes: settings.maxDocumentBytes, maxText: textRemaining });
+          if (parsed.metadata?.error) { detail.reason = parsed.metadata.error; warnings.push(`${node.title}: ${parsed.metadata.error}`); return; }
+          detail.status = parsed.text?.trim() ? "read" : "no_text"; detail.type = parsed.type;
+          detail.bytes = bytes.length; detail.document_truncated = Boolean(parsed.truncated);
+          if (parsed.metadata?.warning) detail.reason = parsed.metadata.warning;
+          stats.documentsParsed++;
+          addText("resource_excerpt", node, parsed.text, related ? 94 : 75, { type: parsed.type, document_truncated: parsed.truncated,
+            module_id: node.moduleId,
+            url: `${client.baseUrl}/courses/${node.courseId}/files/${node.remoteId}` });
+          if (parsed.metadata?.warning) warnings.push(`${node.title}: ${parsed.metadata.warning}`);
+          if (parsed.type === "html") queueLinks(new TextDecoder().decode(bytes), node, depth);
         } catch (error) { detail.reason = errorReason(error); detail.http_status = error.status || undefined; throw error; }
       } else if (node.type === "Assignment") {
         await assignmentDetail({ node, course: courses.find((c) => String(c.id) === String(node.courseId)), assignment: { id: node.remoteId } }, depth);

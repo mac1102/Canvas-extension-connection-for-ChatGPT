@@ -6,6 +6,8 @@ import { deterministicPlan } from "../src/planner/deterministic-planner.js";
 import { DEFAULT_SETTINGS } from "../src/settings.js";
 import { parseDocument } from "../src/parsers/index.js";
 import { linkedStudyFixture } from "./fixtures/linked-study.mjs";
+import { ResourceGraph } from "../src/retrieval/resource-graph.js";
+import { discoverLinks } from "../src/retrieval/html.js";
 
 const query = "@Canvas fetch hôm nay tôi học cái gì";
 async function retrieve(options = {}, settings = {}) {
@@ -74,4 +76,23 @@ test("a locked file is not retried through the signed URL endpoint", async () =>
   const client = new CanvasClient({ token: "fixture-token", fetchImpl: async () => { calls++; return new Response("locked"); } });
   await assert.rejects(client.downloadFile({ id: 304, url: "https://canvas.uva.nl/files/304/download", locked_for_user: true }), /locked/);
   assert.equal(calls, 0);
+});
+
+test("Canvas link verifiers stay internal and preserve access to files available by link", async () => {
+  const graph = new ResourceGraph();
+  const source = graph.add("Page", 1, "practical");
+  const [file] = discoverLinks('<a href="/courses/1/files/304?verifier=private_link">Environment file</a>', source, graph,
+    "https://canvas.uva.nl", new Set(["1"]));
+  assert.equal(file.verifier, "private_link");
+  const requests = [];
+  const client = new CanvasClient({ token: "fixture-token", fetchImpl: async (input) => {
+    const url = new URL(input); requests.push(url);
+    if (!url.pathname.endsWith("/public_url")) return new Response("", { status: 403 });
+    assert.equal(url.searchParams.get("verifier"), "private_link");
+    return new Response(JSON.stringify({ public_url: "https://uploads.s3.amazonaws.com/env.yaml?X-Amz-Signature=fixture" }));
+  } });
+  const metadata = await client.getFile(1, 304, file);
+  assert.equal(metadata.filename, "env.yaml");
+  assert.ok(requests.slice(0, 2).every((url) => url.searchParams.get("use_verifiers") === "true"));
+  assert.ok(requests.every((url) => url.searchParams.get("verifier") === "private_link"));
 });

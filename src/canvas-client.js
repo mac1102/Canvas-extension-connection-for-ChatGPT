@@ -255,20 +255,25 @@ export class CanvasClient {
   getFiles(c) { return this.getAll(`/api/v1/courses/${id(c)}/files`, { sort: "updated_at", order: "desc" }); }
   async getFile(c, f, hint = {}) {
     const courseId = id(c), fileId = id(f);
-    try { return await this.get(`/api/v1/courses/${courseId}/files/${fileId}`); }
+    const verifier = typeof hint.verifier === "string" && /^[a-zA-Z0-9_-]{1,512}$/.test(hint.verifier) ? hint.verifier : undefined;
+    const params = { use_verifiers: true, verifier };
+    try { return { ...await this.get(`/api/v1/courses/${courseId}/files/${fileId}`, params), link_verifier: verifier }; }
     catch (error) {
       if (![403, 404].includes(error.status)) throw error;
       // Module-linked files may be readable through the canonical Files API even
       // when the course Files tab/list is unavailable. Both paths use the token.
-      try { return await this.get(`/api/v1/files/${fileId}`); }
+      try { return { ...await this.get(`/api/v1/files/${fileId}`, params), link_verifier: verifier }; }
       catch (canonicalError) {
         if (![403, 404].includes(canonicalError.status)) throw canonicalError;
         // Download permission can differ from metadata/list permission. Canvas
         // checks access itself before issuing this short-lived storage URL.
-        const signed = await this.get(`/api/v1/files/${fileId}/public_url`);
+        const signed = await this.get(`/api/v1/files/${fileId}/public_url`, { verifier });
         if (!signed?.public_url) throw new CanvasApiError("File has no download URL.");
-        fileDestination(signed.public_url);
-        return { id: Number(fileId), filename: hint.filename || hint.title || "", url: signed.public_url, metadata_unavailable: true };
+        const destination = fileDestination(signed.public_url);
+        let filename = "";
+        try { filename = decodeURIComponent(destination.pathname.split("/").at(-1)); } catch {}
+        return { id: Number(fileId), filename: /\.[a-z0-9]+$/i.test(filename) ? filename : hint.filename || hint.title || "",
+          url: signed.public_url, link_verifier: verifier, metadata_unavailable: true };
       }
     }
   }
@@ -311,7 +316,7 @@ export class CanvasClient {
       try { return (await this.read(url, { api: false, maxBytes })).bytes; }
       catch (error) {
         if (!file.id || [401, 429].includes(error.status) || /limit|locked/i.test(error.message)) throw error;
-        const signed = await this.get(`/api/v1/files/${id(file.id)}/public_url`);
+        const signed = await this.get(`/api/v1/files/${id(file.id)}/public_url`, { verifier: file.link_verifier });
         if (!signed?.public_url) throw error;
         return (await this.read(fileDestination(signed.public_url), { api: false, maxBytes })).bytes;
       }

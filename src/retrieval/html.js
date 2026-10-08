@@ -36,7 +36,10 @@ export function discoverLinks(html, source, graph, baseUrl, allowedCourses) {
       if (!allowedCourses.has(String(courseId))) continue;
       const type = match ? { files: "File", pages: "Page", assignments: "Assignment" }[match[2]] : globalFile ? "File" : null;
       if (!type) continue;
-      const node = graph.add(type, courseId, decodeURIComponent(match ? match[3] : globalFile[1]), { title: anchor.textContent.trim(), moduleId: source.moduleId });
+      const verifier = type === "File" ? url.searchParams.get("verifier") : null;
+      const node = graph.add(type, courseId, decodeURIComponent(match ? match[3] : globalFile[1]), {
+        title: anchor.textContent.trim(), moduleId: source.moduleId,
+        ...(verifier && /^[a-zA-Z0-9_-]{1,512}$/.test(verifier) ? { verifier } : {}) });
       graph.edge(source, node); if (node) output.push(node);
     } catch { /* Malformed or non-Canvas links are not executable. */ }
   }
